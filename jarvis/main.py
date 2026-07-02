@@ -10,7 +10,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="jarvis", description="Your personal AI assistant.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--voice", action="store_true", help="Voice mode: wake word + speech in/out.")
-    mode.add_argument("--ui", action="store_true", help="Launch the desktop chat window.")
+    mode.add_argument("--ui", action="store_true", help="Launch the animated HUD desktop window.")
     args = parser.parse_args()
 
     if args.voice:
@@ -28,7 +28,7 @@ def main() -> None:
         run_voice()
     elif args.ui:
         try:
-            from jarvis.ui.chat_window import run as run_ui
+            from jarvis.ui.hud_window import run as run_ui
         except (ImportError, OSError) as exc:
             print(
                 "The desktop UI isn't ready to run. Make sure you've installed the extras:\n"

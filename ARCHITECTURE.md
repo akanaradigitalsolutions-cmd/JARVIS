@@ -107,23 +107,37 @@ jarvis/
     tts.py              # text-to-speech (pyttsx3, offline)
     wake_word.py         # "Jarvis" wake word detection (openWakeWord)
     loop.py              # ties mic -> STT -> orchestrator -> TTS -> speaker
+  webui/
+    server.py             # FastAPI app: /api/chat, /api/upload, /api/download, /api/transcribe
+    static/                # the HUD itself: index.html, style.css, app.js (no build step, no deps)
   ui/
-    chat_window.py       # PySide6 desktop chat window w/ mic toggle
+    hud_window.py         # PySide6 QMainWindow + QWebEngineView shell around the HUD server
   cli.py                 # terminal chat client (always works, no audio needed)
   main.py                 # entry point: `jarvis`, `jarvis --voice`, `jarvis --ui`
 ```
 
 ## Roadmap (phased delivery)
 
-- **Phase 1 — Core + first real skills (this commit)**
+- **Phase 1 — Core + first real skills (done)**
   Orchestrator, skill system, filesystem skill, document generation
   (PDF/PPTX/Excel), data analysis skill, CLI chat. Fully working and
   testable without any special hardware.
 
-- **Phase 1.5 — Voice + Desktop UI (this commit, code complete)**
-  STT/TTS/wake-word modules and a PySide6 chat window, wired into the same
-  orchestrator. Needs to be tested on your actual Mac/Windows machine
-  (this build sandbox has no mic/speaker/display).
+- **Phase 1.5 — Voice + Desktop HUD**
+  STT/TTS/wake-word modules for hands-free voice mode (code-complete, needs
+  testing on your actual Mac/Windows machine — this build sandbox has no
+  mic/speaker). The desktop HUD (`jarvis --ui`) is **done and verified**:
+  a FastAPI backend (`jarvis/webui/server.py`) wraps the Orchestrator with
+  a small JSON API (chat, file upload/download, browser-mic transcription),
+  and a dependency-free HTML/CSS/JS frontend (`jarvis/webui/static/`)
+  renders an animated arc-reactor-style HUD with a Claude-like chat box
+  (drag/drop attachments, generated files shown as downloadable cards,
+  push-to-talk mic using raw Web Audio API PCM capture — no browser codec
+  issues). It's shown inside a native window via PySide6's
+  `QWebEngineView` (`jarvis/ui/hud_window.py`) rather than a browser tab.
+  Verified with a live browser-engine-driven test: typing a request,
+  submitting the real form, and confirming the PDF/chart file cards
+  rendered correctly from an actual multi-tool Claude Code CLI call.
 
 - **Phase 2 — Digital marketing skills**
   Google Ads API + Meta (Facebook/Instagram) Ads API skills: pull

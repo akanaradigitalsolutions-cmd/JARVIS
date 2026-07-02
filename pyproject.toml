@@ -25,6 +25,9 @@ voice = [
 ]
 ui = [
     "PySide6>=6.6.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "python-multipart>=0.0.9",
 ]
 dev = [
     "pytest>=8.0.0",
@@ -39,3 +42,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["jarvis*"]
+
+[tool.setuptools.package-data]
+"jarvis.webui.static" = ["*"]

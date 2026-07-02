@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="hud" class="idle">
+    <div class="hud-ring ring1"></div>
+    <div class="hud-ring ring2"></div>
+    <div class="hud-ring ring3"></div>
+    <div class="hud-ticks"></div>
+    <div class="hud-core">
+      <div class="hud-core-glow"></div>
+      <div class="hud-title">JARVIS</div>
+      <div class="hud-status" id="hud-status">online</div>
+    </div>
+  </div>
+
+  <main id="chat-panel">
+    <div id="chat-log" aria-live="polite"></div>
+
+    <div id="attachments"></div>
+
+    <form id="chat-form" autocomplete="off">
+      <button type="button" id="attach-btn" title="Attach a file">
+        <svg viewBox="0 0 24 24"><path d="M16.5 6.5v10a4 4 0 0 1-8 0v-11a2.5 2.5 0 0 1 5 0v10a1 1 0 0 1-2 0v-9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <input type="file" id="file-input" multiple hidden>
+      <textarea id="chat-input" rows="1" placeholder="Ask JARVIS anything..."></textarea>
+      <button type="button" id="mic-btn" title="Push to talk">
+        <svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 11a6 6 0 0 0 12 0M12 19v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </button>
+      <button type="submit" id="send-btn">Send</button>
+    </form>
+  </main>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

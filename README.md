@@ -10,9 +10,11 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 
 ## Status
 
-**Phase 1 (core + document/data skills) is done and tested.** Phase 1.5
-(voice + desktop UI) is code-complete but needs testing on your machine —
-this build environment has no microphone/speaker/display.
+**Phase 1 (core + document/data skills) and the desktop HUD (`jarvis --ui`)
+are done and tested end-to-end**, including a live browser-driven test of
+the chat flow. **Voice mode (`jarvis --voice`) is code-complete but needs
+testing on your machine** — this build environment has no
+microphone/speaker.
 
 ## Quick start
 
@@ -40,7 +42,7 @@ Add voice support (optional, bigger install):
 pip install -e ".[voice]"
 ```
 
-Add the desktop chat window (optional):
+Add the animated desktop HUD (optional):
 
 ```bash
 pip install -e ".[ui]"
@@ -65,14 +67,17 @@ Text chat in your terminal (works everywhere, no extra setup):
 jarvis
 ```
 
-Desktop chat window (requires `pip install -e ".[ui]"`):
+Animated desktop HUD — an Iron-Man-style window with a glowing status ring
+and a chat box (drag/drop or attach files, generated PDFs/charts show up as
+downloadable cards, push-to-talk mic button). Requires `pip install -e
+".[ui]"`:
 
 ```bash
 jarvis --ui
 ```
 
-Voice mode — say "Jarvis" to wake it, then speak your request (requires
-`pip install -e ".[voice]"`):
+Voice mode — hands-free: say "Jarvis" to wake it, then speak your request
+and it speaks back (requires `pip install -e ".[voice]"`):
 
 ```bash
 jarvis --voice
