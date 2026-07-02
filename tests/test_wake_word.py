@@ -56,3 +56,25 @@ def test_settings_wake_word_model_used_when_no_explicit_path(monkeypatch):
     assert detector.model_name == "custom"
     assert detector._model.wakeword_models == ["/models/custom.tflite"]
     assert download_calls == []
+
+
+def test_threshold_defaults_to_settings_value(monkeypatch):
+    monkeypatch.setattr(wake_word_module, "Model", _FakeModel)
+    _no_download_calls_tracker(monkeypatch)
+    monkeypatch.setattr(
+        wake_word_module, "settings", dataclasses.replace(wake_word_module.settings, wake_word_threshold=0.22)
+    )
+
+    detector = WakeWordDetector()
+    assert detector.threshold == 0.22
+
+
+def test_explicit_threshold_overrides_settings(monkeypatch):
+    monkeypatch.setattr(wake_word_module, "Model", _FakeModel)
+    _no_download_calls_tracker(monkeypatch)
+    monkeypatch.setattr(
+        wake_word_module, "settings", dataclasses.replace(wake_word_module.settings, wake_word_threshold=0.22)
+    )
+
+    detector = WakeWordDetector(threshold=0.9)
+    assert detector.threshold == 0.9

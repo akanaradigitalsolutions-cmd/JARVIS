@@ -32,6 +32,7 @@ class Settings:
     jarvis_home: Path
     wake_word: str
     wake_word_model: str
+    wake_word_threshold: float
     tts_rate: int
     tts_voice: str
 
@@ -50,6 +51,10 @@ def load_settings() -> Settings:
         # Blank = use the pretrained "Hey JARVIS" model. See
         # ARCHITECTURE.md#custom-wake-word.
         wake_word_model=os.getenv("JARVIS_WAKE_WORD_MODEL", "").strip(),
+        # Lower = easier to trigger (good for non-US accents/pronunciation)
+        # but more prone to false positives from background noise/speech.
+        # openWakeWord's own docs suggest ~0.5; default here is more lenient.
+        wake_word_threshold=float(os.getenv("JARVIS_WAKE_WORD_THRESHOLD", "0.3")),
         tts_rate=int(os.getenv("JARVIS_TTS_RATE", "175")),
         tts_voice=os.getenv("JARVIS_TTS_VOICE", "").strip().lower(),
     )

@@ -10,6 +10,13 @@ ARCHITECTURE.md#custom-wake-word for how to train one on Google Colab
 (free GPU). Once you have the trained .onnx/.tflite file, point
 JARVIS_WAKE_WORD_MODEL (in .env) at it — no code changes needed, this
 module picks it up automatically.
+
+Detection sensitivity is tunable via JARVIS_WAKE_WORD_THRESHOLD (0-1,
+lower = easier to trigger but more prone to false positives from random
+noise/speech). The default is deliberately more lenient than
+openWakeWord's own suggested 0.5, since the pretrained model was trained
+mostly on American-English pronunciation and can otherwise be too strict
+for other accents.
 """
 
 from __future__ import annotations
@@ -24,12 +31,11 @@ from jarvis.core.config import settings
 
 DEFAULT_MODEL = "hey_jarvis_v0.1"
 DEFAULT_MODEL_KEY = "hey_jarvis"  # the name download_models() expects
-DEFAULT_THRESHOLD = 0.5
 CHUNK_SAMPLES = 1280  # openWakeWord expects ~80ms chunks at 16kHz
 
 
 class WakeWordDetector:
-    def __init__(self, model_path: str | None = None, threshold: float = DEFAULT_THRESHOLD) -> None:
+    def __init__(self, model_path: str | None = None, threshold: float | None = None) -> None:
         custom_path = model_path or settings.wake_word_model
         target = custom_path or DEFAULT_MODEL
 
@@ -45,7 +51,7 @@ class WakeWordDetector:
         # predictions dict by the file's stem in that case, rather than by
         # a name you supply — a pretrained model is keyed by its own name.
         self.model_name = Path(target).stem if custom_path else target
-        self.threshold = threshold
+        self.threshold = threshold if threshold is not None else settings.wake_word_threshold
         # Force the onnx backend explicitly. openWakeWord defaults to
         # tflite, which needs the separate `tflite-runtime` package —
         # that package has no wheels for newer Python versions (e.g. 3.13)
