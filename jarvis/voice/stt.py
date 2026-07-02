@@ -18,8 +18,17 @@ _model: WhisperModel | None = None
 def _get_model() -> WhisperModel:
     global _model
     if _model is None:
+        print(f"Loading speech-to-text model ({MODEL_SIZE}, first run downloads it, may take a moment)...")
         _model = WhisperModel(MODEL_SIZE, device="auto", compute_type="int8")
+        print("Speech-to-text model ready.")
     return _model
+
+
+def warmup() -> None:
+    """Loads the model now instead of lazily on first transcribe() call, so
+    voice mode can report progress upfront rather than pausing silently
+    the first time you actually speak a command."""
+    _get_model()
 
 
 def transcribe(audio: np.ndarray) -> str:

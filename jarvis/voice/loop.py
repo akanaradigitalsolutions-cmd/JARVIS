@@ -15,7 +15,7 @@ from jarvis.core.config import settings
 from jarvis.core.llm import ClaudeCLINotAvailableError
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
-from jarvis.voice.stt import transcribe
+from jarvis.voice.stt import transcribe, warmup as warmup_stt
 from jarvis.voice.tts import speak
 from jarvis.voice.wake_word import CHUNK_SAMPLES, WakeWordDetector
 
@@ -58,10 +58,20 @@ def run() -> None:
         print(f"Setup needed: {exc}")
         return
 
+    print("Loading wake-word model (first run downloads a few small files, may take a moment)...", flush=True)
     detector = WakeWordDetector()
+    print("Wake-word model ready.", flush=True)
 
+    warmup_stt()
+
+    print(
+        "Opening microphone (macOS may show a permission prompt now — check for a popup "
+        "if this hangs, it can appear behind other windows)...",
+        flush=True,
+    )
     stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=CHUNK_SAMPLES)
     stream.start()
+    print("Microphone open. Listening for the wake word.", flush=True)
     try:
         while True:
             chunk, _overflowed = stream.read(CHUNK_SAMPLES)
