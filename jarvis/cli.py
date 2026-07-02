@@ -7,7 +7,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markdown import Markdown
 
-from jarvis.core.llm import MissingApiKeyError
+from jarvis.core.llm import ClaudeCLINotAvailableError
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
 
@@ -19,7 +19,7 @@ def run() -> None:
 
     try:
         orchestrator = Orchestrator(memory=SessionMemory())
-    except MissingApiKeyError as exc:
+    except ClaudeCLINotAvailableError as exc:
         console.print(f"[bold red]Setup needed:[/bold red] {exc}")
         return
 

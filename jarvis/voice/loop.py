@@ -12,6 +12,7 @@ import numpy as np
 import sounddevice as sd
 
 from jarvis.core.config import settings
+from jarvis.core.llm import ClaudeCLINotAvailableError
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
 from jarvis.voice.stt import transcribe
@@ -51,7 +52,12 @@ def _record_command(stream: sd.InputStream) -> np.ndarray:
 def run() -> None:
     print(f"JARVIS voice mode. Say \"{settings.wake_word}\" to wake me up. Ctrl+C to quit.")
 
-    orchestrator = Orchestrator(memory=SessionMemory())
+    try:
+        orchestrator = Orchestrator(memory=SessionMemory())
+    except ClaudeCLINotAvailableError as exc:
+        print(f"Setup needed: {exc}")
+        return
+
     detector = WakeWordDetector()
 
     stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=CHUNK_SAMPLES)

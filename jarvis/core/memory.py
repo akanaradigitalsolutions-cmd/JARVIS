@@ -1,27 +1,29 @@
-"""Session memory: persists the conversation to disk so context survives
-across restarts of the CLI/UI/voice loop.
+"""Session bookkeeping: persists JARVIS's Claude Code session id and a
+plain-text transcript (so the CLI/UI can display history) across restarts.
 
-This is intentionally simple (one JSON file per session) — long-term
-structured memory (facts about the user/business) is planned for Phase 5.
+The actual conversation *context* Claude uses lives in Claude Code's own
+on-disk session store and is resumed via --resume (see core/llm.py); this
+file is only for our own display/bookkeeping.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from jarvis.core.config import settings
 
 
 class SessionMemory:
-    def __init__(self, session_id: str | None = None) -> None:
+    def __init__(self, local_id: str | None = None) -> None:
         self.sessions_dir = settings.jarvis_home / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
-        self.session_id = session_id or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-        self.path = self.sessions_dir / f"{self.session_id}.json"
-        self.messages: list[dict[str, Any]] = []
+        self.local_id = local_id or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        self.path = self.sessions_dir / f"{self.local_id}.json"
+
+        self.session_id: str | None = None
+        self.transcript: list[dict[str, Any]] = []
 
     @classmethod
     def latest(cls) -> "SessionMemory":
@@ -30,21 +32,27 @@ class SessionMemory:
         files = sorted(sessions_dir.glob("*.json"))
         if not files:
             return cls()
-        mem = cls(session_id=files[-1].stem)
+        mem = cls(local_id=files[-1].stem)
         mem.load()
         return mem
 
     def load(self) -> None:
         if self.path.exists():
-            self.messages = json.loads(self.path.read_text())
+            data = json.loads(self.path.read_text())
+            self.session_id = data.get("session_id")
+            self.transcript = data.get("transcript", [])
 
-    def append(self, message: dict[str, Any]) -> None:
-        self.messages.append(message)
+    def append_exchange(self, user_text: str, reply_text: str) -> None:
+        self.transcript.append({"role": "user", "text": user_text})
+        self.transcript.append({"role": "assistant", "text": reply_text})
         self.save()
 
     def save(self) -> None:
-        self.path.write_text(json.dumps(self.messages, indent=2, default=str))
+        self.path.write_text(
+            json.dumps({"session_id": self.session_id, "transcript": self.transcript}, indent=2)
+        )
 
     def clear(self) -> None:
-        self.messages = []
+        self.session_id = None
+        self.transcript = []
         self.save()

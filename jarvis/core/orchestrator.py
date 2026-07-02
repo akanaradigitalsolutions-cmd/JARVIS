@@ -1,21 +1,18 @@
-"""The agent loop: takes a user message, talks to Claude, executes any
-tool (skill) calls Claude asks for, feeds the results back, and repeats
-until Claude has a final text answer. This is the one place that ties the
-LLM, the skill registry, and memory together — every frontend (CLI, voice
-loop, desktop UI) just calls Orchestrator.handle_message().
+"""JARVIS's entry point for turning a user message into a reply. Every
+frontend (CLI, voice loop, desktop UI) calls Orchestrator.handle_message()
+with plain text and gets plain text back.
+
+Unlike a direct-API integration, there's no manual tool-dispatch loop here:
+the `claude` CLI (see core/llm.py) runs its own internal agentic loop
+against the MCP tools we expose, resolving multi-step tool use within a
+single headless call.
 """
 
 from __future__ import annotations
 
-import json
-import logging
-
 from jarvis.core.config import settings
-from jarvis.core.llm import LLMClient
+from jarvis.core.llm import ClaudeCLIClient
 from jarvis.core.memory import SessionMemory
-from jarvis.skills import base as skills
-
-logger = logging.getLogger("jarvis.orchestrator")
 
 SYSTEM_PROMPT = """You are JARVIS, a personal AI assistant helping your user with their work: \
 data analytics, digital marketing (Google Ads, social media ads), e-commerce for a hospitality \
@@ -37,61 +34,21 @@ up numbers.
 
 
 class Orchestrator:
-    def __init__(self, memory: SessionMemory | None = None, llm: LLMClient | None = None) -> None:
+    def __init__(self, memory: SessionMemory | None = None, client: ClaudeCLIClient | None = None) -> None:
         self.memory = memory or SessionMemory()
-        self.llm = llm or LLMClient()
-        self.tools = skills.as_anthropic_tools()
+        self.client = client or ClaudeCLIClient()
 
     def handle_message(self, user_text: str) -> str:
-        self.memory.messages.append({"role": "user", "content": user_text})
+        data = self.client.send(user_text, SYSTEM_PROMPT, self.memory.session_id)
 
-        for _ in range(settings.max_tool_iterations):
-            response = self.llm.send(
-                messages=self.memory.messages,
-                system=SYSTEM_PROMPT,
-                tools=self.tools,
-            )
-            content_blocks = [block.model_dump() for block in response.content]
-            self.memory.messages.append({"role": "assistant", "content": content_blocks})
+        session_id = data.get("session_id")
+        if session_id:
+            self.memory.session_id = session_id
 
-            if response.stop_reason != "tool_use":
-                self.memory.save()
-                return self._extract_text(content_blocks)
+        reply = (data.get("result") or "").strip()
+        self.memory.append_exchange(user_text, reply)
 
-            tool_results = [self._execute_tool(block) for block in content_blocks if block["type"] == "tool_use"]
-            self.memory.messages.append({"role": "user", "content": tool_results})
-            self.memory.save()
+        if data.get("is_error"):
+            raise RuntimeError(reply or "Claude returned an error.")
 
-        self.memory.save()
-        return "I hit my internal step limit working on that — could you break the request into smaller steps?"
-
-    @staticmethod
-    def _extract_text(content_blocks: list[dict]) -> str:
-        return "\n".join(b["text"] for b in content_blocks if b["type"] == "text").strip()
-
-    def _execute_tool(self, block: dict) -> dict:
-        tool_name = block["name"]
-        tool_input = block.get("input", {}) or {}
-        found = skills.get_skill(tool_name)
-        if found is None:
-            return {
-                "type": "tool_result",
-                "tool_use_id": block["id"],
-                "content": f"Unknown tool '{tool_name}'.",
-                "is_error": True,
-            }
-        try:
-            result = found.func(**tool_input)
-            return {
-                "type": "tool_result",
-                "tool_use_id": block["id"],
-                "content": json.dumps(result, default=str),
-            }
-        except Exception as exc:  # noqa: BLE001 - surface any skill failure back to Claude
-            logger.exception("Skill '%s' failed", tool_name)
-            return {
-                "type": "tool_result",
-                "tool_use_id": block["id"],
-                "content": f"Error running '{tool_name}': {exc}",
-                "is_error": True,
-            }
+        return reply

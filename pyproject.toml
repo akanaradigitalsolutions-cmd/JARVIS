@@ -5,7 +5,7 @@ description = "A personal AI assistant (like Iron Man's JARVIS) for data analyti
 requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "anthropic>=0.40.0",
+    "mcp>=1.2.0",
     "python-dotenv>=1.0.0",
     "pandas>=2.2.0",
     "matplotlib>=3.8.0",

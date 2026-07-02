@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from jarvis.core.llm import MissingApiKeyError
+from jarvis.core.llm import ClaudeCLINotAvailableError
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
 
@@ -86,7 +86,7 @@ class ChatWindow(QMainWindow):
         setup_error: str | None = None
         try:
             self.orchestrator = Orchestrator(memory=SessionMemory())
-        except MissingApiKeyError as exc:
+        except ClaudeCLINotAvailableError as exc:
             setup_error = str(exc)
 
         central = QWidget()

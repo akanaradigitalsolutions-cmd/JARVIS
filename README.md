@@ -1,9 +1,10 @@
 # JARVIS
 
 A personal AI assistant — like Iron Man's JARVIS — that runs on your Mac or
-Windows machine. Powered by Claude, it's built to help with data analytics,
-digital marketing (Google Ads, social ads), e-commerce for hospitality, web
-development, and general digital work.
+Windows machine. Powered by Claude (via the Claude Code CLI, using your
+Claude Pro/Max subscription — no separate API billing), it's built to help
+with data analytics, digital marketing (Google Ads, social ads), e-commerce
+for hospitality, web development, and general digital work.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full design and roadmap.
 
@@ -15,7 +16,17 @@ this build environment has no microphone/speaker/display.
 
 ## Quick start
 
-### 1. Install
+### 1. Install Claude Code and log in
+
+JARVIS uses the `claude` CLI as its brain, authenticated against your
+**Claude Pro/Max subscription** — no separate API key or billing needed.
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+```
+
+### 2. Install JARVIS
 
 ```bash
 python -m venv .venv
@@ -35,19 +46,20 @@ Add the desktop chat window (optional):
 pip install -e ".[ui]"
 ```
 
-### 2. Configure
+### 3. Configure (optional)
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and set `ANTHROPIC_API_KEY` to your Claude API key
-(https://console.anthropic.com/).
+The defaults work out of the box as long as `claude login` succeeded.
+**Don't set `ANTHROPIC_API_KEY`** — if it's present in your environment,
+the `claude` CLI will use it and bill against pay-as-you-go API credits
+instead of your subscription.
 
-### 3. Run
+### 4. Run
 
-Text chat in your terminal (works everywhere, no setup needed beyond the
-API key):
+Text chat in your terminal (works everywhere, no extra setup):
 
 ```bash
 jarvis

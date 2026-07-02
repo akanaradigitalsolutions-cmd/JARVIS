@@ -26,18 +26,17 @@ def _resolve_home() -> Path:
 
 @dataclass(frozen=True)
 class Settings:
-    anthropic_api_key: str
+    claude_bin: str
     model: str
     workspace: Path
     jarvis_home: Path
     wake_word: str
     tts_rate: int
-    max_tool_iterations: int = 12
 
 
 def load_settings() -> Settings:
     return Settings(
-        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
+        claude_bin=os.getenv("JARVIS_CLAUDE_BIN", "claude"),
         model=os.getenv("JARVIS_MODEL", "claude-sonnet-5"),
         workspace=_resolve_workspace(),
         jarvis_home=_resolve_home(),
