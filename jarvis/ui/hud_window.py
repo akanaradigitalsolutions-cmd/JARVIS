@@ -3,17 +3,25 @@ jarvis/webui/server.py) in a background thread and displays it in a native
 window via QWebEngineView — so `jarvis --ui` feels like a real app, not a
 browser tab, while the actual HUD is just HTML/CSS/JS.
 
-Run with `jarvis --ui`. Requires `pip install -e ".[ui]"`.
+Also runs the same hands-free wake-word pipeline as `jarvis --voice` in a
+background thread (VoiceBridgeThread): saying "Hey JARVIS" brings this
+window to the front and drives the same chat UI, speaking the reply back.
+If voice extras aren't installed, the HUD still runs fine — hands-free
+just silently isn't available (a message is printed once, to stderr).
+
+Run with `jarvis --ui`. Requires `pip install -e ".[ui]"` (add `[voice]"`
+too for the hands-free wake word).
 """
 
 from __future__ import annotations
 
+import json
 import socket
 import sys
 import threading
 import time
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QThread, QUrl, Signal
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
@@ -43,6 +51,104 @@ def _wait_for_server(port: int, timeout: float = 10.0) -> bool:
     return False
 
 
+class VoiceBridgeThread(QThread):
+    """Hands-free wake-word loop that drives the HUD instead of a terminal.
+
+    Reuses the exact same wake-word/STT/TTS pipeline as `jarvis --voice`
+    (jarvis/voice/loop.py), but instead of calling the orchestrator
+    directly and printing to a terminal, it POSTs to this app's own local
+    /api/chat (same server the window is already showing) and pushes the
+    result into the page via Qt signals, so all the actual chat logic
+    stays in one place (jarvis/webui/server.py).
+    """
+
+    wake_detected = Signal()
+    thinking = Signal()
+    exchange_ready = Signal(str, str, str)  # user_text, reply_text, files_json
+    voice_error = Signal(str)
+    setup_failed = Signal(str)
+
+    def __init__(self, port: int) -> None:
+        super().__init__()
+        self.port = port
+        self._stop = threading.Event()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def run(self) -> None:
+        try:
+            import numpy as np
+            import requests
+            import sounddevice as sd
+
+            from jarvis.voice.loop import (
+                CHUNK_SAMPLES,
+                SAMPLE_RATE,
+                _record_command,
+            )
+            from jarvis.voice.stt import transcribe
+            from jarvis.voice.stt import warmup as warmup_stt
+            from jarvis.voice.tts import speak
+            from jarvis.voice.wake_word import WakeWordDetector
+        except ImportError as exc:
+            self.setup_failed.emit(
+                "Voice extras aren't installed, hands-free wake word is off. "
+                f"Run: pip install -e '.[voice]' (missing: {exc.name})"
+            )
+            return
+        except OSError as exc:
+            # sounddevice raises OSError (not ImportError) at import time if
+            # the native PortAudio library isn't available on this machine.
+            self.setup_failed.emit(f"Voice extras couldn't load, hands-free wake word is off: {exc}")
+            return
+
+        try:
+            detector = WakeWordDetector()
+            warmup_stt()
+            stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32", blocksize=CHUNK_SAMPLES)
+            stream.start()
+        except Exception as exc:  # noqa: BLE001 - report any startup failure, keep the HUD itself usable
+            self.setup_failed.emit(f"Couldn't start hands-free voice: {exc}")
+            return
+
+        try:
+            while not self._stop.is_set():
+                chunk, _overflowed = stream.read(CHUNK_SAMPLES)
+                int16_chunk = (chunk.flatten() * 32767).astype(np.int16)
+
+                if not detector.process_chunk(int16_chunk):
+                    continue
+
+                self.wake_detected.emit()
+                audio = _record_command(stream)
+                text = transcribe(audio)
+                if not text:
+                    continue
+
+                self.thinking.emit()
+                try:
+                    resp = requests.post(
+                        f"http://127.0.0.1:{self.port}/api/chat", json={"message": text}, timeout=180
+                    )
+                    data = resp.json()
+                except Exception as exc:  # noqa: BLE001 - network hiccup shouldn't kill the loop
+                    self.voice_error.emit(str(exc))
+                    continue
+
+                if resp.status_code != 200:
+                    self.voice_error.emit(data.get("detail", "Something went wrong."))
+                    continue
+
+                reply = data.get("reply", "")
+                self.exchange_ready.emit(text, reply, json.dumps(data.get("files", [])))
+                if reply:
+                    speak(reply)
+        finally:
+            stream.stop()
+            stream.close()
+
+
 class HudWindow(QMainWindow):
     def __init__(self, port: int) -> None:
         super().__init__()
@@ -51,6 +157,48 @@ class HudWindow(QMainWindow):
         self.view = QWebEngineView()
         self.view.load(QUrl(f"http://127.0.0.1:{port}/"))
         self.setCentralWidget(self.view)
+
+        self.voice_thread = VoiceBridgeThread(port)
+        self.voice_thread.wake_detected.connect(self._on_wake_detected)
+        self.voice_thread.thinking.connect(self._on_thinking)
+        self.voice_thread.exchange_ready.connect(self._on_exchange_ready)
+        self.voice_thread.voice_error.connect(self._on_voice_error)
+        self.voice_thread.setup_failed.connect(self._on_voice_setup_failed)
+        self.voice_thread.start()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override naming convention
+        self.voice_thread.stop()
+        self.voice_thread.wait(2000)
+        super().closeEvent(event)
+
+    def _run_js(self, script: str) -> None:
+        self.view.page().runJavaScript(script)
+
+    def _on_wake_detected(self) -> None:
+        # Best-effort: bring the window to the front. macOS may still keep
+        # another app focused (e.g. a fullscreen app in a different Space,
+        # or Focus/Do Not Disturb mode) — that's an OS-level restriction,
+        # not something an app can force past.
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onWake()")
+
+    def _on_thinking(self) -> None:
+        self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onThinking()")
+
+    def _on_exchange_ready(self, user_text: str, reply_text: str, files_json: str) -> None:
+        script = (
+            "window.jarvisVoiceBridge && window.jarvisVoiceBridge.onExchange("
+            f"{json.dumps(user_text)}, {json.dumps(reply_text)}, {json.dumps(files_json)})"
+        )
+        self._run_js(script)
+
+    def _on_voice_error(self, message: str) -> None:
+        self._run_js(f"window.jarvisVoiceBridge && window.jarvisVoiceBridge.onError({json.dumps(message)})")
+
+    def _on_voice_setup_failed(self, message: str) -> None:
+        print(f"(voice) {message}", file=sys.stderr)
 
 
 def run() -> None:

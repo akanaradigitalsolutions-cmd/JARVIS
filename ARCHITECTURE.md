@@ -111,7 +111,7 @@ jarvis/
     server.py             # FastAPI app: /api/chat, /api/upload, /api/download, /api/transcribe
     static/                # the HUD itself: index.html, style.css, app.js (no build step, no deps)
   ui/
-    hud_window.py         # PySide6 QMainWindow + QWebEngineView shell around the HUD server
+    hud_window.py         # PySide6 QWebEngineView shell + VoiceBridgeThread (hands-free wake word -> HUD)
   cli.py                 # terminal chat client (always works, no audio needed)
   main.py                 # entry point: `jarvis`, `jarvis --voice`, `jarvis --ui`
 ```
@@ -162,21 +162,41 @@ the loop.
   (PDF/PPTX/Excel), data analysis skill, CLI chat. Fully working and
   testable without any special hardware.
 
-- **Phase 1.5 — Voice + Desktop HUD**
-  STT/TTS/wake-word modules for hands-free voice mode (code-complete, needs
-  testing on your actual Mac/Windows machine — this build sandbox has no
-  mic/speaker). The desktop HUD (`jarvis --ui`) is **done and verified**:
-  a FastAPI backend (`jarvis/webui/server.py`) wraps the Orchestrator with
-  a small JSON API (chat, file upload/download, browser-mic transcription),
-  and a dependency-free HTML/CSS/JS frontend (`jarvis/webui/static/`)
-  renders an animated arc-reactor-style HUD with a Claude-like chat box
-  (drag/drop attachments, generated files shown as downloadable cards,
-  push-to-talk mic using raw Web Audio API PCM capture — no browser codec
-  issues). It's shown inside a native window via PySide6's
-  `QWebEngineView` (`jarvis/ui/hud_window.py`) rather than a browser tab.
-  Verified with a live browser-engine-driven test: typing a request,
-  submitting the real form, and confirming the PDF/chart file cards
-  rendered correctly from an actual multi-tool Claude Code CLI call.
+- **Phase 1.5 — Voice + Desktop HUD (done, verified on real hardware)**
+  STT/TTS/wake-word modules for hands-free voice mode (`jarvis --voice`) —
+  confirmed working end-to-end on a real Mac: wake-word detection,
+  transcription, and a spoken reply. The desktop HUD (`jarvis --ui`) is
+  **done and verified**: a FastAPI backend (`jarvis/webui/server.py`)
+  wraps the Orchestrator with a small JSON API (chat, file upload/download,
+  browser-mic transcription), and a dependency-free HTML/CSS/JS frontend
+  (`jarvis/webui/static/`) renders an animated arc-reactor-style HUD with a
+  Claude-like chat box (drag/drop attachments, generated files shown as
+  downloadable cards, push-to-talk mic using raw Web Audio API PCM capture
+  — no browser codec issues). It's shown inside a native window via
+  PySide6's `QWebEngineView` (`jarvis/ui/hud_window.py`) rather than a
+  browser tab. Verified with a live browser-engine-driven test: typing a
+  request, submitting the real form, and confirming the PDF/chart file
+  cards rendered correctly from an actual multi-tool Claude Code CLI call.
+
+  The HUD also fuses in the hands-free pipeline: `HudWindow` runs a
+  `VoiceBridgeThread` in the background (same wake-word/STT/TTS pipeline as
+  `jarvis --voice`) that, on "Hey JARVIS", brings the window to the front
+  and pushes the exchange into the same chat log via a small JS bridge
+  (`window.jarvisVoiceBridge`, driven from Python via
+  `QWebEngineView.page().runJavaScript()`), rather than duplicating the
+  chat UI in Qt widgets. It POSTs to the HUD's own local `/api/chat`
+  (the same endpoint the browser-side JS uses) rather than calling the
+  orchestrator directly, so there's exactly one code path for "handle a
+  chat message," used by typing, the push-to-talk button, and hands-free
+  wake word alike. Verified with a live headless test driving the actual
+  Qt signal → JS injection → DOM-render path end-to-end; the audio
+  hardware side (does saying "Hey JARVIS" really trigger it) inherits the
+  same verification as `jarvis --voice` above, since it's the same
+  underlying wake-word code.
+  Note: bringing the window to the front on wake is best-effort —
+  macOS can still keep another app focused (fullscreen app in a different
+  Space, Focus/Do Not Disturb mode, etc.); that's an OS-level restriction
+  no app can override.
 
 - **Phase 2 — Digital marketing skills**
   Google Ads API + Meta (Facebook/Instagram) Ads API skills: pull

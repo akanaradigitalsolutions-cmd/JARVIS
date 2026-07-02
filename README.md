@@ -69,18 +69,21 @@ jarvis
 
 Animated desktop HUD — an Iron-Man-style window with a glowing status ring
 and a chat box (drag/drop or attach files, generated PDFs/charts show up as
-downloadable cards, push-to-talk mic button). Requires `pip install -e
+downloadable cards, push-to-talk mic button). If you also have `pip
+install -e ".[voice]"`, it listens hands-free in the background too —
+say "Hey JARVIS" and the window comes to the front and shows the
+conversation live, speaking the reply back. Requires `pip install -e
 ".[ui]"`:
 
 ```bash
 jarvis --ui
 ```
 
-Voice mode — hands-free: say "Hey JARVIS" to wake it, then speak your
-request and it speaks back (requires `pip install -e ".[voice]"`). The
-wake phrase is fixed to "Hey JARVIS" (the free pretrained model) unless
-you train a custom one — see [ARCHITECTURE.md](ARCHITECTURE.md#custom-wake-word)
-for how:
+Terminal-only voice mode — same hands-free "Hey JARVIS" wake word, but
+text in/out via the terminal instead of the HUD window (requires `pip
+install -e ".[voice]"`). The wake phrase is fixed to "Hey JARVIS" (the
+free pretrained model) unless you train a custom one — see
+[ARCHITECTURE.md](ARCHITECTURE.md#custom-wake-word) for how:
 
 ```bash
 jarvis --voice
