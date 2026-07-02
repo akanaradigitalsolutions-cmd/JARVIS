@@ -1,0 +1,41 @@
+[project]
+name = "jarvis-assistant"
+version = "0.1.0"
+description = "A personal AI assistant (like Iron Man's JARVIS) for data analytics, digital marketing, e-commerce, and web dev work."
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+    "anthropic>=0.40.0",
+    "python-dotenv>=1.0.0",
+    "pandas>=2.2.0",
+    "matplotlib>=3.8.0",
+    "openpyxl>=3.1.0",
+    "python-pptx>=1.0.0",
+    "reportlab>=4.2.0",
+    "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+voice = [
+    "faster-whisper>=1.0.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.26.0",
+    "pyttsx3>=2.90",
+    "openwakeword>=0.6.0",
+]
+ui = [
+    "PySide6>=6.6.0",
+]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+jarvis = "jarvis.main:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["jarvis*"]
