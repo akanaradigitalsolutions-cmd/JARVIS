@@ -76,8 +76,11 @@ downloadable cards, push-to-talk mic button). Requires `pip install -e
 jarvis --ui
 ```
 
-Voice mode — hands-free: say "Jarvis" to wake it, then speak your request
-and it speaks back (requires `pip install -e ".[voice]"`):
+Voice mode — hands-free: say "Hey JARVIS" to wake it, then speak your
+request and it speaks back (requires `pip install -e ".[voice]"`). The
+wake phrase is fixed to "Hey JARVIS" (the free pretrained model) unless
+you train a custom one — see [ARCHITECTURE.md](ARCHITECTURE.md#custom-wake-word)
+for how:
 
 ```bash
 jarvis --voice

@@ -105,7 +105,7 @@ jarvis/
   voice/
     stt.py              # speech-to-text (faster-whisper, local/offline)
     tts.py              # text-to-speech (pyttsx3, offline)
-    wake_word.py         # "Jarvis" wake word detection (openWakeWord)
+    wake_word.py         # "Hey JARVIS" wake word detection (openWakeWord), swappable for a custom-trained model
     loop.py              # ties mic -> STT -> orchestrator -> TTS -> speaker
   webui/
     server.py             # FastAPI app: /api/chat, /api/upload, /api/download, /api/transcribe
@@ -115,6 +115,45 @@ jarvis/
   cli.py                 # terminal chat client (always works, no audio needed)
   main.py                 # entry point: `jarvis`, `jarvis --voice`, `jarvis --ui`
 ```
+
+## Custom wake word
+
+Voice mode listens for **"Hey JARVIS"** by default — openWakeWord's free,
+pretrained model, trained by its maintainers on ~30,000 hours of negative
+audio. That's not something worth trying to beat with a homemade model.
+
+If you want an exact custom phrase instead (e.g. "JARVIS wake up"),
+training one needs a GPU and several GB of dataset downloads — genuinely
+not feasible in a plain CPU sandbox. The practical way to do it:
+
+1. Open the official openWakeWord training notebook in Google Colab (free
+   GPU): **[`automatic_model_training.ipynb`](https://github.com/dscripka/openWakeWord/blob/main/notebooks/automatic_model_training.ipynb)**
+   (from the [openWakeWord repo](https://github.com/dscripka/openWakeWord)).
+2. In Colab: **Runtime → Change runtime type → GPU** (T4 is fine, free tier).
+3. In the notebook's config cell, set your target phrase, e.g.:
+   ```yaml
+   target_phrase: ["jarvis wake up"]
+   model_name: "jarvis_wake_up"
+   ```
+4. Run all cells (~20-30 min on the free GPU tier). It generates synthetic
+   TTS training samples for your phrase, trains a small classifier against
+   openWakeWord's precomputed negative-audio features, and exports a
+   `jarvis_wake_up.onnx` (or `.tflite`) file.
+5. Download that model file to your Mac, e.g. into `~/Jarvis/models/`.
+6. Point JARVIS at it — in `.env`:
+   ```
+   JARVIS_WAKE_WORD_MODEL=/Users/you/Jarvis/models/jarvis_wake_up.onnx
+   JARVIS_WAKE_WORD=jarvis wake up
+   ```
+   No code changes needed — `jarvis/voice/wake_word.py` picks up a custom
+   model path automatically and falls back to "Hey JARVIS" if it's unset.
+
+Expect to iterate: a first pass often has too many false positives/negatives
+until you retrain with a larger sample count or adjust the detection
+threshold (`WakeWordDetector(threshold=...)`). Since I can't hear your mic
+from here, this loop — you test, tell me what's misfiring, I adjust the
+threshold or help tune the notebook config — has to happen with you in
+the loop.
 
 ## Roadmap (phased delivery)
 
