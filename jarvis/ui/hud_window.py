@@ -17,15 +17,33 @@ from __future__ import annotations
 
 import json
 import socket
+import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 
 from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from jarvis.webui.server import app as fastapi_app
+
+
+def _reveal_in_file_manager(path: Path) -> None:
+    """Open the OS file browser with the downloaded file selected, so the
+    user gets the same "there it is" feedback a real browser download bar
+    would give — QWebEngineView itself has no such UI of its own."""
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["open", "-R", str(path)], check=False)
+        elif sys.platform == "win32":
+            subprocess.run(["explorer", f"/select,{path}"], check=False)
+        else:
+            subprocess.run(["xdg-open", str(path.parent)], check=False)
+    except OSError:
+        pass
 
 
 def _free_port() -> int:
@@ -158,6 +176,7 @@ class HudWindow(QMainWindow):
         self.view = QWebEngineView()
         self.view.load(QUrl(f"http://127.0.0.1:{port}/"))
         self.setCentralWidget(self.view)
+        self.view.page().profile().downloadRequested.connect(self._on_download_requested)
 
         self.voice_thread = VoiceBridgeThread(port)
         self.voice_thread.wake_detected.connect(self._on_wake_detected)
@@ -166,6 +185,24 @@ class HudWindow(QMainWindow):
         self.voice_thread.voice_error.connect(self._on_voice_error)
         self.voice_thread.setup_failed.connect(self._on_voice_setup_failed)
         self.voice_thread.start()
+
+    def _on_download_requested(self, download: QWebEngineDownloadRequest) -> None:
+        """QWebEngineView has no built-in download UI at all — clicking a
+        generated file's card in the HUD would otherwise silently do
+        nothing. Auto-save to ~/Downloads and reveal it, matching the
+        experience of clicking a file card in a real Claude chat window.
+        """
+        downloads_dir = Path.home() / "Downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        download.setDownloadDirectory(str(downloads_dir))
+        download.setDownloadFileName(download.suggestedFileName())
+
+        def _on_state_changed(state: QWebEngineDownloadRequest.DownloadState) -> None:
+            if state == QWebEngineDownloadRequest.DownloadState.DownloadCompleted:
+                _reveal_in_file_manager(downloads_dir / download.downloadFileName())
+
+        download.stateChanged.connect(_on_state_changed)
+        download.accept()
 
     def shutdown_voice_thread(self) -> None:
         """Stop the background voice thread before Qt/Python teardown.
