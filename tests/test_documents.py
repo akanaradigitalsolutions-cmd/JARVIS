@@ -42,7 +42,7 @@ def test_generate_presentation_creates_file():
             {"heading": "Next steps", "bullets": ["Increase budget on top campaign"]},
         ],
     )
-    assert result["slides"] == 3  # title slide + 2 content slides
+    assert result["slides"] == 4  # title slide + 2 content slides + closing slide
     assert resolve_in_workspace("deck.pptx").exists()
 
 

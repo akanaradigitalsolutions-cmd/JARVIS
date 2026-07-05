@@ -21,9 +21,9 @@ from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import HRFlowable
+from reportlab.platypus import BaseDocTemplate, Frame, HRFlowable, NextPageTemplate, PageTemplate
 from reportlab.platypus import Image as RLImage
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Paragraph, Spacer
 
 from jarvis.skills.base import skill
 from jarvis.skills.filesystem import resolve_in_workspace
@@ -85,17 +85,56 @@ def _pdf_styles() -> dict[str, ParagraphStyle]:
     }
 
 
-def _pdf_page_decoration(canvas, doc) -> None:
-    """Thin accent bar across the top and a page number, on every page —
-    the branding cue that makes a report look like it came from one
-    consistent template rather than a bare reportlab default."""
+_PDF_MARGIN_X = 0.75 * inch
+_PDF_BOTTOM_MARGIN = 0.8 * inch
+_PDF_COVER_BAND_HEIGHT = 2.2 * inch
+_PDF_LATER_TOP_MARGIN = 0.9 * inch
+
+
+def _pdf_page_number(canvas, doc) -> None:
+    canvas.setFont("Helvetica", 9)
+    canvas.setFillColor(_hc(_MUTED))
+    canvas.drawRightString(letter[0] - 0.6 * inch, 0.5 * inch, f"Page {doc.page}")
+
+
+def _make_pdf_cover_decoration(title: str, subtitle: str):
+    """Draws the navy cover band with the title/subtitle straight onto the
+    canvas (not as flowables), matching the PPTX title slide's look — this
+    is what makes the report's first page feel like a designed cover
+    instead of a plain page with a heading at the top."""
+
+    def _decorate(canvas, doc) -> None:
+        canvas.saveState()
+        page_width, page_height = letter
+        canvas.setFillColor(_hc(_NAVY))
+        canvas.rect(0, page_height - _PDF_COVER_BAND_HEIGHT, page_width, _PDF_COVER_BAND_HEIGHT, fill=1, stroke=0)
+
+        canvas.setFillColor(_hc(_TEXT_LIGHT))
+        canvas.setFont("Helvetica-Bold", 25)
+        canvas.drawString(_PDF_MARGIN_X, page_height - 1.15 * inch, title)
+
+        canvas.setFillColor(_hc(_ACCENT))
+        canvas.rect(_PDF_MARGIN_X, page_height - 1.4 * inch, 1.3 * inch, 3, fill=1, stroke=0)
+
+        if subtitle:
+            canvas.setFillColor(_hc(_MUTED))
+            canvas.setFont("Helvetica", 12)
+            canvas.drawString(_PDF_MARGIN_X, page_height - 1.75 * inch, subtitle)
+
+        _pdf_page_number(canvas, doc)
+        canvas.restoreState()
+
+    return _decorate
+
+
+def _pdf_later_page_decoration(canvas, doc) -> None:
+    """Thin accent bar across the top of every page after the cover, plus
+    the page number — a lighter-weight echo of the cover band."""
     canvas.saveState()
     page_width, page_height = letter
     canvas.setFillColor(_hc(_ACCENT))
     canvas.rect(0, page_height - 0.12 * inch, page_width, 0.12 * inch, fill=1, stroke=0)
-    canvas.setFont("Helvetica", 9)
-    canvas.setFillColor(_hc(_MUTED))
-    canvas.drawRightString(page_width - 0.6 * inch, 0.5 * inch, f"Page {doc.page}")
+    _pdf_page_number(canvas, doc)
     canvas.restoreState()
 
 
@@ -129,10 +168,25 @@ def generate_pdf_report(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     styles = _pdf_styles()
-    story = [Paragraph(title, styles["title"])]
-    if subtitle:
-        story.append(Paragraph(subtitle, styles["subtitle"]))
-    story.append(HRFlowable(width="100%", thickness=1, color=_hc(_ACCENT), spaceAfter=16))
+    page_width, page_height = letter
+    frame_width = page_width - 2 * _PDF_MARGIN_X
+
+    cover_frame = Frame(
+        _PDF_MARGIN_X, _PDF_BOTTOM_MARGIN, frame_width,
+        page_height - _PDF_COVER_BAND_HEIGHT - 0.4 * inch - _PDF_BOTTOM_MARGIN, id="cover",
+    )
+    later_frame = Frame(
+        _PDF_MARGIN_X, _PDF_BOTTOM_MARGIN, frame_width,
+        page_height - _PDF_LATER_TOP_MARGIN - _PDF_BOTTOM_MARGIN, id="later",
+    )
+
+    doc = BaseDocTemplate(str(out_path), pagesize=letter)
+    doc.addPageTemplates([
+        PageTemplate(id="Cover", frames=cover_frame, onPage=_make_pdf_cover_decoration(title, subtitle)),
+        PageTemplate(id="Later", frames=later_frame, onPage=_pdf_later_page_decoration),
+    ])
+
+    story: list[Any] = [NextPageTemplate("Later")]
 
     for section in sections:
         story.append(Paragraph(section.get("heading", ""), styles["heading"]))
@@ -140,7 +194,7 @@ def generate_pdf_report(
         if section.get("body"):
             story.append(Paragraph(section["body"], styles["body"]))
         for bullet in section.get("bullets", []) or []:
-            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{bullet}", styles["bullet"]))
+            story.append(Paragraph(f'<font color="#{_ACCENT}">&#9679;</font>&nbsp;&nbsp;{bullet}', styles["bullet"]))
         image_path = section.get("image_path")
         if image_path:
             resolved_img = resolve_in_workspace(image_path)
@@ -149,10 +203,7 @@ def generate_pdf_report(
                 story.append(RLImage(str(resolved_img), width=6 * inch, height=3.375 * inch, kind="proportional"))
         story.append(Spacer(1, 0.25 * inch))
 
-    doc = SimpleDocTemplate(
-        str(out_path), pagesize=letter, topMargin=0.9 * inch, bottomMargin=0.8 * inch,
-    )
-    doc.build(story, onFirstPage=_pdf_page_decoration, onLaterPages=_pdf_page_decoration)
+    doc.build(story)
     return {"path": filename, "sections": len(sections)}
 
 
@@ -295,12 +346,26 @@ def generate_presentation(
                 str(resolved_img), Inches(7.1), Inches(1.7), width=sw - Inches(7.1) - Inches(0.6),
             )
         _add_text(
-            slide, Inches(0.7), sh - Inches(0.55), Inches(2), Inches(0.4),
-            f"{i + 1:02d}", size=11, color_hex=_MUTED,
+            slide, Inches(0.7), sh - Inches(0.55), Inches(4), Inches(0.4),
+            "JARVIS", size=10, color_hex=_MUTED,
+        )
+        _add_text(
+            slide, sw - Inches(2.7), sh - Inches(0.55), Inches(2), Inches(0.4),
+            f"{i + 1:02d}", size=10, color_hex=_MUTED, align=PP_ALIGN.RIGHT,
         )
 
+    # ---- closing slide: same navy treatment as the title slide, so the ----
+    # ---- deck bookends itself instead of just stopping after the last topic
+    closing_slide = prs.slides.add_slide(layout)
+    _add_rect(closing_slide, 0, 0, sw, sh, _NAVY)
+    _add_text(
+        closing_slide, Inches(0.9), Inches(3.1), sw - Inches(1.8), Inches(1.1),
+        "Thank You", size=36, color_hex=_TEXT_LIGHT, bold=True, align=PP_ALIGN.CENTER,
+    )
+    _add_rect(closing_slide, sw / 2 - Inches(0.8), Inches(4.05), Inches(1.6), Pt(3), _ACCENT)
+
     prs.save(str(out_path))
-    return {"path": filename, "slides": len(slides) + 1}
+    return {"path": filename, "slides": len(slides) + 2}
 
 
 @skill(

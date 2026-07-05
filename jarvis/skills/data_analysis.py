@@ -19,6 +19,28 @@ from jarvis.skills.filesystem import resolve_in_workspace
 
 _SUPPORTED_CHARTS = {"line", "bar", "scatter", "pie", "hist"}
 
+# Same navy/teal palette as the PDF/PPTX generators (jarvis/skills/documents.py)
+# so a chart embedded in a report looks like it belongs to the same brand
+# instead of matplotlib's default blue/orange color cycle.
+_NAVY = "#141B2E"
+_ACCENT = "#2EC4B6"
+_MUTED = "#6B7A8F"
+_PALETTE = ["#2EC4B6", "#141B2E", "#E4A94F", "#8895A7", "#7C6FDC"]
+
+
+def _apply_brand_style(ax, fig) -> None:
+    fig.patch.set_facecolor("white")
+    ax.set_facecolor("white")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_color(_MUTED)
+    ax.spines["bottom"].set_color(_MUTED)
+    ax.tick_params(colors=_MUTED, labelsize=9)
+    ax.yaxis.grid(True, color="#E4E9F0", linewidth=0.8)
+    ax.set_axisbelow(True)
+    ax.xaxis.label.set_color(_MUTED)
+    ax.yaxis.label.set_color(_MUTED)
+
 
 def _load_dataframe(path: str, sheet_name: str | None = None) -> pd.DataFrame:
     resolved = resolve_in_workspace(path)
@@ -105,28 +127,36 @@ def generate_chart(
 
     fig, ax = plt.subplots(figsize=(8, 4.5))
     if chart_type == "line":
-        df.plot(x=x, y=y_cols, kind="line", ax=ax)
+        df.plot(x=x, y=y_cols, kind="line", ax=ax, color=_PALETTE, linewidth=2.4)
     elif chart_type == "bar":
-        df.plot(x=x, y=y_cols, kind="bar", ax=ax)
+        df.plot(x=x, y=y_cols, kind="bar", ax=ax, color=_PALETTE, width=0.7, edgecolor="none")
     elif chart_type == "scatter":
-        ax.scatter(df[x], df[y_cols[0]])
+        ax.scatter(df[x], df[y_cols[0]], color=_ACCENT, edgecolor=_NAVY, linewidth=0.5, s=50)
         ax.set_xlabel(x)
         ax.set_ylabel(y_cols[0])
     elif chart_type == "pie":
-        df.set_index(x)[y_cols[0]].plot(kind="pie", ax=ax, autopct="%1.1f%%")
+        df.set_index(x)[y_cols[0]].plot(
+            kind="pie", ax=ax, autopct="%1.1f%%", colors=_PALETTE,
+            wedgeprops={"edgecolor": "white", "linewidth": 1.5},
+            textprops={"color": _NAVY, "fontsize": 9},
+        )
         ax.set_ylabel("")
     elif chart_type == "hist":
-        df[y_cols[0]].plot(kind="hist", ax=ax)
+        df[y_cols[0]].plot(kind="hist", ax=ax, color=_ACCENT, edgecolor="white")
 
+    if chart_type != "pie":
+        _apply_brand_style(ax, fig)
+        if ax.get_legend() is not None:
+            ax.legend(frameon=False, labelcolor=_NAVY)
     if title:
-        ax.set_title(title)
+        ax.set_title(title, color=_NAVY, fontsize=13, fontweight="bold", pad=12)
     fig.tight_layout()
 
     if not output_filename.lower().endswith(".png"):
         output_filename += ".png"
     out_path = resolve_in_workspace(output_filename)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=200)
     plt.close(fig)
 
     return {"path": output_filename}
