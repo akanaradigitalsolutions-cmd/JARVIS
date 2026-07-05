@@ -89,7 +89,7 @@ class VoiceBridgeThread(QThread):
             )
             from jarvis.voice.stt import transcribe
             from jarvis.voice.stt import warmup as warmup_stt
-            from jarvis.voice.tts import speak
+            from jarvis.voice.tts import speak, speak_wake_acknowledgement
             from jarvis.voice.wake_word import WakeWordDetector
         except ImportError as exc:
             self.setup_failed.emit(
@@ -121,6 +121,7 @@ class VoiceBridgeThread(QThread):
                     continue
 
                 self.wake_detected.emit()
+                speak_wake_acknowledgement()
                 audio = _record_command(stream)
                 text = transcribe(audio)
                 if not text:

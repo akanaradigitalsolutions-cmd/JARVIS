@@ -9,9 +9,20 @@ lever available for free/offline TTS to *sound* more like JARVIS.
 
 from __future__ import annotations
 
+import random
+
 import pyttsx3
 
 from jarvis.core.config import settings
+
+# Said the instant the wake word fires, before the command is even recorded —
+# a quick in-character acknowledgment rather than a flat "Yes?".
+_WAKE_ACKNOWLEDGEMENTS = [
+    "Yes, boss?",
+    "At your service.",
+    "Go ahead, I'm listening.",
+    "Yes, boss, what can I do for you?",
+]
 
 # Ordered by preference: macOS ships "Daniel" (en-GB) on most systems, and
 # Windows/other platforms may have similarly-named British voices installed.
@@ -63,6 +74,10 @@ def speak(text: str) -> None:
     engine = _get_engine()
     engine.say(text)
     engine.runAndWait()
+
+
+def speak_wake_acknowledgement() -> None:
+    speak(random.choice(_WAKE_ACKNOWLEDGEMENTS))
 
 
 if __name__ == "__main__":

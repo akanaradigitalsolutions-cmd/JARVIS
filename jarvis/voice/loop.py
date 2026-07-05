@@ -16,7 +16,7 @@ from jarvis.core.llm import ClaudeCLINotAvailableError
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
 from jarvis.voice.stt import transcribe, warmup as warmup_stt
-from jarvis.voice.tts import speak
+from jarvis.voice.tts import speak, speak_wake_acknowledgement
 from jarvis.voice.wake_word import CHUNK_SAMPLES, WakeWordDetector
 
 SAMPLE_RATE = 16000
@@ -81,7 +81,7 @@ def run() -> None:
             if not detector.process_chunk(int16_chunk):
                 continue
 
-            speak("Yes?")
+            speak_wake_acknowledgement()
             print("(wake word detected, listening...)")
             audio = _record_command(stream)
             text = transcribe(audio)
