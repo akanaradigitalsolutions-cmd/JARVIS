@@ -13,15 +13,37 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
+from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.util import Inches, Pt
+from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.platypus import HRFlowable
 from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 from jarvis.skills.base import skill
 from jarvis.skills.filesystem import resolve_in_workspace
+
+# Shared "professional business" palette, used by both the PPTX and PDF
+# generators so a report and a deck built from the same request look like
+# they belong to the same brand.
+_NAVY = "141B2E"
+_ACCENT = "2EC4B6"
+_MUTED = "6B7A8F"
+_TEXT_DARK = "1F2A37"
+_TEXT_LIGHT = "F5F7FA"
+
+
+def _hc(hex_str: str) -> HexColor:
+    """reportlab's HexColor wants a leading '#'; our shared palette
+    constants don't have one since python-pptx's RGBColor.from_string
+    requires the opposite (no '#')."""
+    return HexColor(f"#{hex_str}")
+
 
 _SECTION_SCHEMA = {
     "type": "object",
@@ -40,6 +62,41 @@ _SECTION_SCHEMA = {
     },
     "required": ["heading"],
 }
+
+
+def _pdf_styles() -> dict[str, ParagraphStyle]:
+    base = getSampleStyleSheet()
+    return {
+        "title": ParagraphStyle(
+            "JarvisTitle", parent=base["Title"], textColor=_hc(_NAVY), fontSize=26, spaceAfter=4,
+        ),
+        "subtitle": ParagraphStyle(
+            "JarvisSubtitle", parent=base["Normal"], textColor=_hc(_MUTED), fontSize=12, spaceAfter=4,
+        ),
+        "heading": ParagraphStyle(
+            "JarvisHeading2", parent=base["Heading2"], textColor=_hc(_NAVY), spaceBefore=16, spaceAfter=4,
+        ),
+        "body": ParagraphStyle(
+            "JarvisBody", parent=base["BodyText"], textColor=_hc(_TEXT_DARK), leading=15,
+        ),
+        "bullet": ParagraphStyle(
+            "JarvisBullet", parent=base["BodyText"], textColor=_hc(_TEXT_DARK), leftIndent=14, leading=15,
+        ),
+    }
+
+
+def _pdf_page_decoration(canvas, doc) -> None:
+    """Thin accent bar across the top and a page number, on every page —
+    the branding cue that makes a report look like it came from one
+    consistent template rather than a bare reportlab default."""
+    canvas.saveState()
+    page_width, page_height = letter
+    canvas.setFillColor(_hc(_ACCENT))
+    canvas.rect(0, page_height - 0.12 * inch, page_width, 0.12 * inch, fill=1, stroke=0)
+    canvas.setFont("Helvetica", 9)
+    canvas.setFillColor(_hc(_MUTED))
+    canvas.drawRightString(page_width - 0.6 * inch, 0.5 * inch, f"Page {doc.page}")
+    canvas.restoreState()
 
 
 @skill(
@@ -71,18 +128,19 @@ def generate_pdf_report(
     out_path = resolve_in_workspace(filename)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    styles = getSampleStyleSheet()
-    story = [Paragraph(title, styles["Title"])]
+    styles = _pdf_styles()
+    story = [Paragraph(title, styles["title"])]
     if subtitle:
-        story.append(Paragraph(subtitle, styles["Normal"]))
-    story.append(Spacer(1, 0.3 * inch))
+        story.append(Paragraph(subtitle, styles["subtitle"]))
+    story.append(HRFlowable(width="100%", thickness=1, color=_hc(_ACCENT), spaceAfter=16))
 
     for section in sections:
-        story.append(Paragraph(section.get("heading", ""), styles["Heading2"]))
+        story.append(Paragraph(section.get("heading", ""), styles["heading"]))
+        story.append(HRFlowable(width="18%", thickness=2, color=_hc(_ACCENT), spaceAfter=8, hAlign="LEFT"))
         if section.get("body"):
-            story.append(Paragraph(section["body"], styles["BodyText"]))
+            story.append(Paragraph(section["body"], styles["body"]))
         for bullet in section.get("bullets", []) or []:
-            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{bullet}", styles["BodyText"]))
+            story.append(Paragraph(f"&bull;&nbsp;&nbsp;{bullet}", styles["bullet"]))
         image_path = section.get("image_path")
         if image_path:
             resolved_img = resolve_in_workspace(image_path)
@@ -91,9 +149,67 @@ def generate_pdf_report(
                 story.append(RLImage(str(resolved_img), width=6 * inch, height=3.375 * inch, kind="proportional"))
         story.append(Spacer(1, 0.25 * inch))
 
-    doc = SimpleDocTemplate(str(out_path), pagesize=letter)
-    doc.build(story)
+    doc = SimpleDocTemplate(
+        str(out_path), pagesize=letter, topMargin=0.9 * inch, bottomMargin=0.8 * inch,
+    )
+    doc.build(story, onFirstPage=_pdf_page_decoration, onLaterPages=_pdf_page_decoration)
     return {"path": filename, "sections": len(sections)}
+
+
+def _blank_layout(prs: Presentation):
+    """The default python-pptx template's blank layout (no placeholders at
+    all), so every element on a slide is one we placed and styled
+    ourselves rather than an unstyled inherited placeholder."""
+    for layout in prs.slide_layouts:
+        if len(layout.placeholders) == 0:
+            return layout
+    return prs.slide_layouts[6]
+
+
+def _add_rect(slide, left, top, width, height, color_hex: str):
+    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = RGBColor.from_string(color_hex)
+    shape.line.fill.background()
+    shape.shadow.inherit = False
+    return shape
+
+
+def _add_text(
+    slide, left, top, width, height, text: str, size: int, color_hex: str,
+    bold: bool = False, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP,
+):
+    box = slide.shapes.add_textbox(left, top, width, height)
+    tf = box.text_frame
+    tf.word_wrap = True
+    tf.vertical_anchor = anchor
+    p = tf.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.size = Pt(size)
+    run.font.bold = bold
+    run.font.color.rgb = RGBColor.from_string(color_hex)
+    return box
+
+
+def _add_bullets(slide, left, top, width, height, bullets: list[str]):
+    box = slide.shapes.add_textbox(left, top, width, height)
+    tf = box.text_frame
+    tf.word_wrap = True
+    for i, bullet in enumerate(bullets):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.space_after = Pt(12)
+        dot = p.add_run()
+        dot.text = "▸  "
+        dot.font.size = Pt(15)
+        dot.font.bold = True
+        dot.font.color.rgb = RGBColor.from_string(_ACCENT)
+        text_run = p.add_run()
+        text_run.text = bullet
+        text_run.font.size = Pt(15)
+        text_run.font.color.rgb = RGBColor.from_string(_TEXT_DARK)
+    return box
 
 
 @skill(
@@ -137,30 +253,51 @@ def generate_presentation(
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     prs = Presentation()
+    prs.slide_width = Inches(13.333)  # 16:9 widescreen, not the dated 4:3 default
+    prs.slide_height = Inches(7.5)
+    layout = _blank_layout(prs)
+    sw, sh = prs.slide_width, prs.slide_height
 
-    title_slide = prs.slides.add_slide(prs.slide_layouts[0])
-    title_slide.shapes.title.text = title
-    if subtitle and len(title_slide.placeholders) > 1:
-        title_slide.placeholders[1].text = subtitle
+    # ---- title slide: full-bleed navy background, big title, gold rule ----
+    title_slide = prs.slides.add_slide(layout)
+    _add_rect(title_slide, 0, 0, sw, sh, _NAVY)
+    _add_text(
+        title_slide, Inches(0.9), Inches(2.9), sw - Inches(1.8), Inches(1.4),
+        title, size=40, color_hex=_TEXT_LIGHT, bold=True,
+    )
+    _add_rect(title_slide, Inches(0.95), Inches(3.95), Inches(1.6), Pt(3), _ACCENT)
+    if subtitle:
+        _add_text(
+            title_slide, Inches(0.9), Inches(4.2), sw - Inches(1.8), Inches(0.7),
+            subtitle, size=18, color_hex=_MUTED,
+        )
 
-    for slide_def in slides:
-        layout = prs.slide_layouts[1]  # title + content
+    # ---- content slides: white background, gold top bar, heading + body ----
+    for i, slide_def in enumerate(slides):
         slide = prs.slides.add_slide(layout)
-        slide.shapes.title.text = slide_def.get("heading", "")
+        _add_rect(slide, 0, 0, sw, Pt(6), _ACCENT)
+        _add_text(
+            slide, Inches(0.7), Inches(0.4), sw - Inches(1.4), Inches(0.9),
+            slide_def.get("heading", ""), size=28, color_hex=_NAVY, bold=True,
+        )
+        _add_rect(slide, Inches(0.72), Inches(1.15), Inches(1.1), Pt(3), _ACCENT)
 
         bullets = slide_def.get("bullets") or []
-        if bullets:
-            body = slide.placeholders[1].text_frame
-            body.text = bullets[0]
-            for bullet in bullets[1:]:
-                p = body.add_paragraph()
-                p.text = bullet
-
         image_path = slide_def.get("image_path")
-        if image_path:
-            resolved_img = resolve_in_workspace(image_path)
-            if resolved_img.exists():
-                slide.shapes.add_picture(str(resolved_img), Inches(5.5), Inches(1.5), width=Inches(4))
+        resolved_img = resolve_in_workspace(image_path) if image_path else None
+        has_image = bool(resolved_img and resolved_img.exists())
+
+        body_width = Inches(6.0) if has_image else (sw - Inches(1.4))
+        if bullets:
+            _add_bullets(slide, Inches(0.7), Inches(1.6), body_width, sh - Inches(2.1), bullets)
+        if has_image:
+            slide.shapes.add_picture(
+                str(resolved_img), Inches(7.1), Inches(1.7), width=sw - Inches(7.1) - Inches(0.6),
+            )
+        _add_text(
+            slide, Inches(0.7), sh - Inches(0.55), Inches(2), Inches(0.4),
+            f"{i + 1:02d}", size=11, color_hex=_MUTED,
+        )
 
     prs.save(str(out_path))
     return {"path": filename, "slides": len(slides) + 1}
