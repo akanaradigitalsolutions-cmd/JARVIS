@@ -32,9 +32,6 @@ _PREFERRED_VOICE_KEYWORDS = [
     "daniel", "arthur", "oliver", "en_gb", "en-gb", "british", "great britain",
 ]
 
-_engine = None
-
-
 def list_voices() -> list[tuple[str, str]]:
     engine = pyttsx3.init()
     return [(v.id, v.name) for v in engine.getProperty("voices") or []]
@@ -59,21 +56,20 @@ def _pick_voice(engine) -> None:
     # else: leave the OS default voice
 
 
-def _get_engine():
-    global _engine
-    if _engine is None:
-        _engine = pyttsx3.init()
-        _engine.setProperty("rate", settings.tts_rate)
-        _pick_voice(_engine)
-    return _engine
-
-
 def speak(text: str) -> None:
     if not text:
         return
-    engine = _get_engine()
+    # A fresh engine per call, not a cached singleton: pyttsx3's macOS driver
+    # (NSSpeechSynthesizer) is known to hang on a second runAndWait() call
+    # against the same engine instance, which silently froze the wake-word
+    # loop as soon as we added a second speak() call per exchange (the wake
+    # acknowledgement, followed later by the spoken reply).
+    engine = pyttsx3.init()
+    engine.setProperty("rate", settings.tts_rate)
+    _pick_voice(engine)
     engine.say(text)
     engine.runAndWait()
+    engine.stop()
 
 
 def speak_wake_acknowledgement() -> None:
