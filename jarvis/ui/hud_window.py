@@ -82,6 +82,8 @@ class VoiceBridgeThread(QThread):
 
     wake_detected = Signal()
     thinking = Signal()
+    speaking_started = Signal()
+    speaking_finished = Signal()
     exchange_ready = Signal(str, str, str)  # user_text, reply_text, files_json
     voice_error = Signal(str)
     setup_failed = Signal(str)
@@ -139,7 +141,9 @@ class VoiceBridgeThread(QThread):
                     continue
 
                 self.wake_detected.emit()
+                self.speaking_started.emit()
                 speak_wake_acknowledgement()
+                self.speaking_finished.emit()
                 audio = _record_command(stream)
                 text = transcribe(audio)
                 if not text:
@@ -161,8 +165,14 @@ class VoiceBridgeThread(QThread):
 
                 reply = data.get("reply", "")
                 self.exchange_ready.emit(text, reply, json.dumps(data.get("files", [])))
+                # The HUD used to flip back to "online" here even though speak()
+                # below hadn't run yet, so it visually looked idle while JARVIS
+                # was still actually talking. speaking_started/finished bracket
+                # the real speaking duration so the HUD state matches reality.
+                self.speaking_started.emit()
                 if reply:
                     speak(reply)
+                self.speaking_finished.emit()
         finally:
             stream.stop()
             stream.close()
@@ -181,6 +191,8 @@ class HudWindow(QMainWindow):
         self.voice_thread = VoiceBridgeThread(port)
         self.voice_thread.wake_detected.connect(self._on_wake_detected)
         self.voice_thread.thinking.connect(self._on_thinking)
+        self.voice_thread.speaking_started.connect(self._on_speaking_started)
+        self.voice_thread.speaking_finished.connect(self._on_speaking_finished)
         self.voice_thread.exchange_ready.connect(self._on_exchange_ready)
         self.voice_thread.voice_error.connect(self._on_voice_error)
         self.voice_thread.setup_failed.connect(self._on_voice_setup_failed)
@@ -237,6 +249,12 @@ class HudWindow(QMainWindow):
 
     def _on_thinking(self) -> None:
         self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onThinking()")
+
+    def _on_speaking_started(self) -> None:
+        self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onSpeakingStart()")
+
+    def _on_speaking_finished(self) -> None:
+        self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onSpeakingEnd()")
 
     def _on_exchange_ready(self, user_text: str, reply_text: str, files_json: str) -> None:
         script = (
