@@ -81,6 +81,31 @@ body {
   border-color: var(--cyan-dim);
 }
 
+/* ---------- Drop-to-attach overlay ---------- */
+
+#drop-overlay {
+  display: none;
+  position: fixed;
+  inset: 10px;
+  z-index: 50;
+  pointer-events: none;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--cyan);
+  border-radius: 16px;
+  background: rgba(4, 18, 26, 0.75);
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 18px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  text-shadow: 0 0 10px var(--cyan-glow);
+}
+
+body.drag-over #drop-overlay {
+  display: flex;
+}
+
 /* ---------- HUD ---------- */
 
 #hud {
