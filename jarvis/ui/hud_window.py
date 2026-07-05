@@ -166,9 +166,22 @@ class HudWindow(QMainWindow):
         self.voice_thread.setup_failed.connect(self._on_voice_setup_failed)
         self.voice_thread.start()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override naming convention
+    def shutdown_voice_thread(self) -> None:
+        """Stop the background voice thread before Qt/Python teardown.
+
+        A blocked network call (e.g. a slow /api/chat request) can keep the
+        thread alive well past a short grace period. Destroying a QThread
+        object while its underlying OS thread is still running aborts the
+        whole process (Qt's QThread destructor calls qFatal), so if it
+        doesn't stop in time we forcibly terminate it and wait for real.
+        """
         self.voice_thread.stop()
-        self.voice_thread.wait(2000)
+        if not self.voice_thread.wait(2000):
+            self.voice_thread.terminate()
+            self.voice_thread.wait()
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override naming convention
+        self.shutdown_voice_thread()
         super().closeEvent(event)
 
     def _run_js(self, script: str) -> None:
@@ -212,6 +225,7 @@ def run() -> None:
 
     app = QApplication(sys.argv)
     window = HudWindow(port)
+    app.aboutToQuit.connect(window.shutdown_voice_thread)
     window.show()
     sys.exit(app.exec())
 
