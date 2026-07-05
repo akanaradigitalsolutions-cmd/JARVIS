@@ -5,9 +5,12 @@
   --cyan: #4fd8ff;
   --cyan-dim: #1c6f8c;
   --cyan-glow: rgba(79, 216, 255, 0.55);
+  --accent: #ffb454;
+  --accent-glow: rgba(255, 180, 84, 0.55);
   --text: #d9f4ff;
   --text-dim: #7fa3b3;
   --danger: #ff6b6b;
+  --mono: "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -15,7 +18,10 @@
 html, body {
   height: 100%;
   margin: 0;
-  background: radial-gradient(ellipse at 50% -10%, #0c2733 0%, var(--bg) 55%);
+  background:
+    repeating-linear-gradient(0deg, rgba(79, 216, 255, 0.05) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(79, 216, 255, 0.05) 0 1px, transparent 1px 48px),
+    radial-gradient(ellipse at 50% -10%, #0c2733 0%, var(--bg) 55%);
   color: var(--text);
   font-family: -apple-system, "SF Pro Display", "Segoe UI", Helvetica, Arial, sans-serif;
   overflow: hidden;
@@ -25,12 +31,61 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  position: relative;
+}
+
+/* ---------- Targeting frame (corner brackets) ---------- */
+
+#hud-frame {
+  position: fixed;
+  inset: 14px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+#hud-frame::before,
+#hud-frame::after,
+#hud-frame span::before,
+#hud-frame span::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-color: var(--cyan-dim);
+  opacity: 0.55;
+}
+
+#hud-frame::before {
+  top: 0; left: 0;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+#hud-frame::after {
+  top: 0; right: 0;
+  border-top: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+#hud-frame span::before {
+  bottom: 0; left: 0;
+  border-bottom: 1.5px solid;
+  border-left: 1.5px solid;
+  border-color: var(--cyan-dim);
+}
+
+#hud-frame span::after {
+  bottom: 0; right: 0;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+  border-color: var(--cyan-dim);
 }
 
 /* ---------- HUD ---------- */
 
 #hud {
   position: relative;
+  z-index: 1;
   width: 190px;
   height: 190px;
   margin: 22px auto 6px;
@@ -83,6 +138,41 @@ body {
   animation: spin 40s linear infinite;
 }
 
+/* Segmented accent arc: a bright partial band that sweeps around, evoking
+   the movie HUD's highlighted dial segment. */
+.hud-accent-arc {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 305deg,
+    var(--accent) 320deg,
+    var(--accent) 340deg,
+    transparent 355deg,
+    transparent 360deg
+  );
+  opacity: 0.9;
+  -webkit-mask: radial-gradient(circle, transparent 78%, black 79%, black 82%, transparent 83%);
+  mask: radial-gradient(circle, transparent 78%, black 79%, black 82%, transparent 83%);
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+  animation: spin 5s linear infinite;
+}
+
+/* Cardinal tick blocks (N/E/S/W), like a targeting reticle */
+.hud-cardinals span {
+  position: absolute;
+  background: var(--cyan);
+  opacity: 0.8;
+  box-shadow: 0 0 6px var(--cyan-glow);
+}
+
+.hud-cardinals span:nth-child(1) { top: -12px; left: 50%; width: 2px; height: 10px; transform: translateX(-50%); }
+.hud-cardinals span:nth-child(2) { bottom: -12px; left: 50%; width: 2px; height: 10px; transform: translateX(-50%); }
+.hud-cardinals span:nth-child(3) { left: -12px; top: 50%; height: 2px; width: 10px; transform: translateY(-50%); }
+.hud-cardinals span:nth-child(4) { right: -12px; top: 50%; height: 2px; width: 10px; transform: translateY(-50%); }
+
 .hud-core {
   position: relative;
   width: 108px;
@@ -106,6 +196,7 @@ body {
 }
 
 .hud-title {
+  font-family: var(--mono);
   font-size: 12px;
   letter-spacing: 3px;
   font-weight: 600;
@@ -115,6 +206,7 @@ body {
 }
 
 .hud-status {
+  font-family: var(--mono);
   font-size: 9px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -136,17 +228,22 @@ body {
 #hud.thinking .ring2 { animation-duration: 1.4s; }
 #hud.thinking .hud-core-glow { animation-duration: 0.9s; }
 #hud.thinking .hud-status { color: var(--cyan); }
+#hud.thinking .hud-accent-arc { animation-duration: 1.1s; }
 
 #hud.listening .hud-core-glow { animation: pulse 0.6s ease-in-out infinite; }
 #hud.listening .hud-core { border-color: var(--cyan); }
 #hud.listening .hud-status { color: var(--cyan); }
+#hud.listening .hud-accent-arc { animation-duration: 2s; }
 
 #hud.error .hud-core { border-color: var(--danger); }
 #hud.error .hud-title { color: var(--danger); text-shadow: 0 0 8px rgba(255, 107, 107, 0.6); }
+#hud.error .hud-accent-arc { background: conic-gradient(from 0deg, transparent 0deg, transparent 305deg, var(--danger) 320deg, var(--danger) 340deg, transparent 355deg, transparent 360deg); }
 
 /* ---------- Chat panel ---------- */
 
 #chat-panel {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
