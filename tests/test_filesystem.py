@@ -1,7 +1,10 @@
 import pytest
+from docx import Document as DocxDocument
+from reportlab.pdfgen.canvas import Canvas
 
 from jarvis.skills.filesystem import (
     PathOutsideWorkspaceError,
+    read_document_text,
     read_text_file,
     resolve_in_workspace,
     write_text_file,
@@ -35,4 +38,30 @@ def test_path_traversal_is_blocked():
 
 def test_missing_file_reports_error_not_exception():
     result = read_text_file("does/not/exist.txt")
+    assert "error" in result
+
+
+def test_read_document_text_extracts_pdf():
+    path = resolve_in_workspace("sample.pdf")
+    canvas = Canvas(str(path))
+    canvas.drawString(100, 700, "Hello from a PDF")
+    canvas.save()
+
+    result = read_document_text("sample.pdf")
+    assert "Hello from a PDF" in result["content"]
+
+
+def test_read_document_text_extracts_docx():
+    path = resolve_in_workspace("sample.docx")
+    document = DocxDocument()
+    document.add_paragraph("Hello from a Word document")
+    document.save(str(path))
+
+    result = read_document_text("sample.docx")
+    assert "Hello from a Word document" in result["content"]
+
+
+def test_read_document_text_rejects_unsupported_type():
+    write_text_file("sample.csv", "a,b\n1,2\n", overwrite=True)
+    result = read_document_text("sample.csv")
     assert "error" in result

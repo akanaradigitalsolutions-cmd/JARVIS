@@ -42,18 +42,23 @@ def _apply_brand_style(ax, fig) -> None:
     ax.yaxis.label.set_color(_MUTED)
 
 
-def _load_dataframe(path: str, sheet_name: str | None = None) -> pd.DataFrame:
+def load_dataframe(path: str, sheet_name: str | None = None) -> pd.DataFrame:
+    """Shared by every skill that reads tabular data (this module and
+    business_metrics.py) so file-type support only needs to live in one
+    place."""
     resolved = resolve_in_workspace(path)
     if not resolved.exists():
         raise FileNotFoundError(f"'{path}' not found in the workspace.")
     suffix = resolved.suffix.lower()
     if suffix == ".csv":
         return pd.read_csv(resolved)
+    if suffix == ".tsv":
+        return pd.read_csv(resolved, sep="\t")
     if suffix in (".xlsx", ".xls"):
         return pd.read_excel(resolved, sheet_name=sheet_name or 0)
     if suffix == ".json":
         return pd.read_json(resolved)
-    raise ValueError(f"Unsupported data file type: {suffix}. Use .csv, .xlsx, .xls, or .json.")
+    raise ValueError(f"Unsupported data file type: {suffix}. Use .csv, .tsv, .xlsx, .xls, or .json.")
 
 
 @skill(
@@ -74,7 +79,7 @@ def _load_dataframe(path: str, sheet_name: str | None = None) -> pd.DataFrame:
     },
 )
 def analyze_dataset(path: str, sheet_name: str | None = None) -> dict:
-    df = _load_dataframe(path, sheet_name)
+    df = load_dataframe(path, sheet_name)
     numeric_summary = df.describe(include="number").round(3).to_dict()
     return {
         "path": path,
@@ -122,7 +127,7 @@ def generate_chart(
     if chart_type not in _SUPPORTED_CHARTS:
         return {"error": f"Unsupported chart_type '{chart_type}'. Use one of {sorted(_SUPPORTED_CHARTS)}."}
 
-    df = _load_dataframe(path)
+    df = load_dataframe(path)
     y_cols = y or [c for c in df.select_dtypes(include="number").columns][:1]
 
     fig, ax = plt.subplots(figsize=(8, 4.5))

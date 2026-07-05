@@ -10,8 +10,8 @@ from __future__ import annotations
 from typing import Any
 
 from openpyxl import Workbook
-from openpyxl.styles import Font
-from openpyxl.utils import get_column_letter
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.utils import column_index_from_string, get_column_letter
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE
@@ -368,11 +368,20 @@ def generate_presentation(
     return {"path": filename, "slides": len(slides) + 2}
 
 
+_EXCEL_MAX_COL_WIDTH = 42
+_EXCEL_MIN_COL_WIDTH = 10
+
+
 @skill(
     name="generate_excel_report",
     description=(
-        "Create an Excel (.xlsx) workbook from tabular data. Accepts one or more sheets, "
-        "each a list of rows (first row is treated as the header)."
+        "Create an Excel (.xlsx) workbook from tabular data, with a designed header row, "
+        "banded rows, autofilter, and a frozen header — not a bare data dump. Accepts one or "
+        "more sheets, each a list of rows (first row is treated as the header). Any cell value "
+        "that starts with '=' is written as a real, live Excel formula (e.g. '=SUM(B2:B10)', "
+        "'=B2/C2', '=B2-C2'), so computed columns and per-row calculations can be included "
+        "directly in the data rather than precomputed. Optionally format specific columns as "
+        "currency/percentage/etc, and/or auto-add a summed totals row."
     ),
     input_schema={
         "type": "object",
@@ -386,15 +395,44 @@ def generate_presentation(
                     "items": {"type": "array"},
                 },
             },
+            "column_formats": {
+                "type": "object",
+                "description": (
+                    "Map of sheet name -> {column letter: Excel number format string}, e.g. "
+                    "{'Revenue': {'B': '$#,##0.00', 'C': '0.0%'}}. Applies to all data rows in that column."
+                ),
+                "additionalProperties": {"type": "object", "additionalProperties": {"type": "string"}},
+            },
+            "totals_columns": {
+                "type": "object",
+                "description": (
+                    "Map of sheet name -> list of column letters to auto-sum into a bold totals "
+                    "row at the bottom, e.g. {'Revenue': ['B', 'C']}."
+                ),
+                "additionalProperties": {"type": "array", "items": {"type": "string"}},
+            },
         },
         "required": ["filename", "sheets"],
     },
 )
-def generate_excel_report(filename: str, sheets: dict[str, list[list[Any]]]) -> dict:
+def generate_excel_report(
+    filename: str,
+    sheets: dict[str, list[list[Any]]],
+    column_formats: dict[str, dict[str, str]] | None = None,
+    totals_columns: dict[str, list[str]] | None = None,
+) -> dict:
     if not filename.lower().endswith(".xlsx"):
         filename += ".xlsx"
     out_path = resolve_in_workspace(filename)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    column_formats = column_formats or {}
+    totals_columns = totals_columns or {}
+
+    header_fill = PatternFill(start_color=_NAVY, end_color=_NAVY, fill_type="solid")
+    header_font = Font(bold=True, color=_TEXT_LIGHT)
+    band_fill = PatternFill(start_color="EEF1F5", end_color="EEF1F5", fill_type="solid")
+    totals_border = Border(top=Side(style="thin", color=_ACCENT))
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -403,10 +441,48 @@ def generate_excel_report(filename: str, sheets: dict[str, list[list[Any]]]) -> 
         ws = wb.create_sheet(title=sheet_name[:31])
         for row in rows:
             ws.append(row)
-        if rows:
-            for col_idx in range(1, len(rows[0]) + 1):
-                ws.cell(row=1, column=col_idx).font = Font(bold=True)
-                ws.column_dimensions[get_column_letter(col_idx)].width = 18
+        if not rows:
+            continue
+
+        n_cols = len(rows[0])
+        n_rows = len(rows)
+
+        for col_idx in range(1, n_cols + 1):
+            cell = ws.cell(row=1, column=col_idx)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(vertical="center")
+            width = max(_EXCEL_MIN_COL_WIDTH, min(_EXCEL_MAX_COL_WIDTH, max(len(str(cell.value or "")), 10) + 4))
+            ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+        for row_idx in range(2, n_rows + 1):
+            if row_idx % 2 == 0:
+                for col_idx in range(1, n_cols + 1):
+                    ws.cell(row=row_idx, column=col_idx).fill = band_fill
+
+        for col_letter, fmt in (column_formats.get(sheet_name) or {}).items():
+            col_idx = column_index_from_string(col_letter)
+            for row_idx in range(2, n_rows + 1):
+                ws.cell(row=row_idx, column=col_idx).number_format = fmt
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:{get_column_letter(n_cols)}{n_rows}"
+
+        totals_cols = totals_columns.get(sheet_name) or []
+        if totals_cols:
+            totals_row_idx = n_rows + 1
+            ws.cell(row=totals_row_idx, column=1, value="Total").font = Font(bold=True, color=_NAVY)
+            for col_letter in totals_cols:
+                col_idx = column_index_from_string(col_letter)
+                cell = ws.cell(
+                    row=totals_row_idx, column=col_idx,
+                    value=f"=SUM({col_letter}2:{col_letter}{n_rows})",
+                )
+                cell.font = Font(bold=True, color=_NAVY)
+                if col_letter in (column_formats.get(sheet_name) or {}):
+                    cell.number_format = column_formats[sheet_name][col_letter]
+            for col_idx in range(1, n_cols + 1):
+                ws.cell(row=totals_row_idx, column=col_idx).border = totals_border
 
     wb.save(str(out_path))
     return {"path": filename, "sheets": list(sheets.keys())}

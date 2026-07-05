@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from docx import Document as DocxDocument
+from pypdf import PdfReader
+
 from jarvis.core.config import settings
 from jarvis.skills.base import skill
 
@@ -60,7 +63,10 @@ def list_workspace_files(subfolder: str = "") -> dict:
 
 @skill(
     name="read_text_file",
-    description="Read the contents of a text-based file (csv, txt, md, json, etc.) inside the Jarvis workspace.",
+    description=(
+        "Read the contents of a text-based file (csv, tsv, txt, md, json, etc.) inside the "
+        "Jarvis workspace. For .pdf or .docx files, use read_document_text instead."
+    ),
     input_schema={
         "type": "object",
         "properties": {
@@ -77,6 +83,53 @@ def read_text_file(path: str, max_chars: int = 20000) -> dict:
     content = resolved.read_text(errors="replace")
     truncated = len(content) > max_chars
     return {"path": path, "content": content[:max_chars], "truncated": truncated}
+
+
+def _extract_pdf_text(path: Path) -> str:
+    reader = PdfReader(str(path))
+    return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+
+
+def _extract_docx_text(path: Path) -> str:
+    document = DocxDocument(str(path))
+    return "\n".join(p.text for p in document.paragraphs)
+
+
+@skill(
+    name="read_document_text",
+    description=(
+        "Extract the text content of a PDF or Word (.docx) document inside the Jarvis "
+        "workspace, so it can be summarized, analyzed, or turned into a report/presentation. "
+        "For plain text/csv/json/md files, use read_text_file instead."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Path to the .pdf or .docx file, relative to the workspace."},
+            "max_chars": {"type": "integer", "description": "Maximum characters to return (default 20000)."},
+        },
+        "required": ["path"],
+    },
+)
+def read_document_text(path: str, max_chars: int = 20000) -> dict:
+    resolved = resolve_in_workspace(path)
+    if not resolved.exists():
+        return {"error": f"File not found: {path}"}
+
+    suffix = resolved.suffix.lower()
+    if suffix == ".pdf":
+        text = _extract_pdf_text(resolved)
+    elif suffix == ".docx":
+        text = _extract_docx_text(resolved)
+    else:
+        return {
+            "error": (
+                f"Unsupported document type '{suffix}'. read_document_text handles .pdf/.docx; "
+                "use read_text_file for plain text/csv/json/md files."
+            )
+        }
+    truncated = len(text) > max_chars
+    return {"path": path, "content": text[:max_chars], "truncated": truncated}
 
 
 @skill(
