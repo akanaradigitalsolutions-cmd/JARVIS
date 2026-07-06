@@ -8,6 +8,16 @@
 # edit the default below.
 set -e
 
+# Force native Apple Silicon execution if launched under Rosetta (e.g. via
+# a stray "Open using Rosetta" checkbox in Finder's Get Info for this app).
+# Without this, a venv built with native arm64 wheels (pydantic_core, etc.)
+# fails to load with an "incompatible architecture" dlopen error the
+# moment the app runs under x86_64 translation instead. No-op on Intel
+# Macs (sysctl.proc_translated doesn't exist there, so this stays 0/empty).
+if [ "$(sysctl -in sysctl.proc_translated 2>/dev/null)" = "1" ]; then
+    exec arch -arm64 /bin/bash "$0" "$@"
+fi
+
 JARVIS_DIR="${JARVIS_PROJECT_DIR:-$HOME/JARVIS}"
 LOG_DIR="$HOME/.jarvis/logs"
 mkdir -p "$LOG_DIR"
