@@ -37,10 +37,18 @@ MCP_SERVER_MODULE = "jarvis.mcp_server"
 # MCP tool definitions from being shown to the model at all (verified
 # against Claude Code 2.1.198), which silently breaks every skill. An
 # explicit --disallowedTools list coexists correctly with --mcp-config.
+#
+# WebSearch is deliberately NOT in this list (unlike everything else here):
+# it's a real, live web-search tool built into Claude Code itself, and
+# without it JARVIS had no way to answer anything needing current
+# information ("today's market", "latest X") — it could only fetch a
+# specific URL it was already given (see skills/web.py). WebFetch stays
+# denied since our own fetch_url skill already covers "read this one page"
+# more narrowly.
 BUILTIN_TOOLS_TO_DENY = [
     "Bash", "BashOutput", "KillShell", "PowerShell",
     "Read", "Write", "Edit", "NotebookEdit",
-    "Glob", "Grep", "WebFetch", "WebSearch", "Task",
+    "Glob", "Grep", "WebFetch", "Task",
 ]
 
 
@@ -81,7 +89,11 @@ class ClaudeCLIClient:
 
     @staticmethod
     def _allowed_tools() -> str:
-        return ",".join(f"mcp__jarvis__{s.name}" for s in skills.all_skills())
+        # --allowedTools is a strict whitelist, so a built-in tool we want
+        # available (WebSearch) has to be listed here explicitly — merely
+        # leaving it out of BUILTIN_TOOLS_TO_DENY isn't enough on its own.
+        skill_tools = [f"mcp__jarvis__{s.name}" for s in skills.all_skills()]
+        return ",".join(["WebSearch", *skill_tools])
 
     def build_args(self, prompt: str, system_prompt: str, session_id: str | None) -> list[str]:
         args = [

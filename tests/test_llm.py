@@ -49,8 +49,9 @@ def test_build_args_denies_builtins_and_whitelists_skills():
     assert set(denied.split(",")) == set(BUILTIN_TOOLS_TO_DENY)
 
     allowed = args[args.index("--allowedTools") + 1]
-    expected = {f"mcp__jarvis__{s.name}" for s in skills.all_skills()}
+    expected = {f"mcp__jarvis__{s.name}" for s in skills.all_skills()} | {"WebSearch"}
     assert set(allowed.split(",")) == expected
+    assert "WebSearch" not in set(denied.split(","))
 
 
 def test_warns_but_does_not_crash_when_api_key_set(monkeypatch, capsys):
