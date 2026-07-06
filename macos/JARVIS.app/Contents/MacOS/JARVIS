@@ -6,32 +6,74 @@
 # If your JARVIS project lives somewhere other than ~/JARVIS, either set
 # JARVIS_PROJECT_DIR in your shell environment before launching, or just
 # edit the default below.
-set -e
+#
+# NOTE: no `set -e` here on purpose — the diagnostics block below runs
+# probe commands that are *expected* to sometimes fail (e.g. asking the
+# x86_64 slice to run), and we don't want that to abort the launch.
 
 JARVIS_DIR="${JARVIS_PROJECT_DIR:-$HOME/JARVIS}"
 LOG_DIR="$HOME/.jarvis/logs"
 mkdir -p "$LOG_DIR"
+DIAG="$LOG_DIR/launcher.log"
 
 if [ ! -d "$JARVIS_DIR" ] || [ ! -f "$JARVIS_DIR/.venv/bin/activate" ]; then
     osascript -e "display alert \"JARVIS not found\" message \"Couldn't find a JARVIS install with its virtual environment at $JARVIS_DIR. Edit Contents/MacOS/JARVIS inside JARVIS.app (right-click JARVIS.app > Show Package Contents) and fix JARVIS_DIR, or set the JARVIS_PROJECT_DIR environment variable.\" as critical"
     exit 1
 fi
 
+# --- Escape Rosetta if we got launched translated -----------------------
+# The recurring failure was `jarvis --ui` importing an arm64-only compiled
+# wheel (pydantic_core) into an x86_64 Python and dlopen()-ing the wrong
+# architecture. The root cause is that a Finder double-click can start this
+# whole bundle *translated* under Rosetta, and `uname -m` can't reveal that
+# — it always reports the host's native arch (arm64), not whether THIS
+# process is translated. `sysctl.proc_translated` is the real signal: it's
+# 1 when the current process is running under Rosetta.
+#
+# If we detect that, relaunch this very script through a fresh native
+# arm64 shell. The guard variable stops an infinite loop if the re-exec
+# can't actually escape translation (in which case the diagnostics below
+# will make that plain in the log).
+if [ "$(uname -m)" = "arm64" ] \
+   && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = "1" ] \
+   && [ -z "$JARVIS_ARM64_REEXEC" ]; then
+    export JARVIS_ARM64_REEXEC=1
+    echo "$(date '+%Y-%m-%d %H:%M:%S') launcher: running under Rosetta — re-exec via arch -arm64 /bin/bash" >> "$DIAG"
+    exec arch -arm64 /bin/bash "$0" "$@"
+fi
+
 cd "$JARVIS_DIR"
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-# python.org's official installer ships a universal2 (x86_64 + arm64) fat
-# binary. Launched from an interactive Terminal it runs arm64 natively as
-# expected, but a genuine Finder double-click of this bundle was launching
-# the whole process tree under Rosetta translation instead (confirmed:
-# dlopen failures on arm64-only compiled wheels like pydantic_core, even
-# though `uname -m` reports arm64 — that reports the host's native
-# architecture, not whether the calling process itself is translated).
-# Once the top-level process is translated, arch -arm64 from inside it
-# can't escape back to native — the architecture has to be chosen at the
-# point Launch Services starts the bundle's executable, which is what
-# Info.plist's LSRequiresNativeExecution key does. With that key set,
-# this script (and everything it execs) is guaranteed to already be
-# native arm64, so no workaround is needed here.
-exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
+# Resolve the venv's Python (the interpreter name can vary a little).
+PYBIN="$JARVIS_DIR/.venv/bin/python3.13"
+[ -x "$PYBIN" ] || PYBIN="$JARVIS_DIR/.venv/bin/python3"
+[ -x "$PYBIN" ] || PYBIN="$JARVIS_DIR/.venv/bin/python"
+
+# --- Ground-truth diagnostics (written on every launch) -----------------
+# When something goes wrong here it's almost always an architecture
+# mismatch that's invisible from an interactive Terminal, so capture the
+# real state of THIS launch rather than guessing from a working shell.
+{
+    echo "=== JARVIS launcher diagnostics $(date '+%Y-%m-%d %H:%M:%S') ==="
+    echo "uname -m            : $(uname -m)"
+    echo "arch (this shell)   : $(arch 2>/dev/null)"
+    echo "proc_translated     : $(sysctl -n sysctl.proc_translated 2>/dev/null || echo n/a)"
+    echo "JARVIS_ARM64_REEXEC : ${JARVIS_ARM64_REEXEC:-unset}"
+    echo "PYBIN               : $PYBIN"
+    echo "file(PYBIN)         : $(file -b "$PYBIN" 2>/dev/null)"
+    echo "default slice reports: $("$PYBIN" -c 'import platform; print(platform.machine())' 2>&1)"
+    echo "arch -arm64 reports : $(arch -arm64 "$PYBIN" -c 'import platform; print(platform.machine())' 2>&1)"
+    echo "=========================================================="
+} >> "$DIAG" 2>&1
+
+# Launch the HUD. On Apple Silicon, pin the arm64 slice explicitly as a
+# second line of defence (the Rosetta re-exec above should already have us
+# native, but this is harmless if so and helps in the default-slice case).
+# `-m jarvis.main` doesn't depend on the console-script path existing.
+if [ "$(uname -m)" = "arm64" ]; then
+    exec arch -arm64 "$PYBIN" -m jarvis.main --ui >> "$DIAG" 2>&1
+else
+    exec "$PYBIN" -m jarvis.main --ui >> "$DIAG" 2>&1
+fi
