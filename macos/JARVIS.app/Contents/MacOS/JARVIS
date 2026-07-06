@@ -8,16 +8,6 @@
 # edit the default below.
 set -e
 
-# Force native Apple Silicon execution if launched under Rosetta (e.g. via
-# a stray "Open using Rosetta" checkbox in Finder's Get Info for this app).
-# Without this, a venv built with native arm64 wheels (pydantic_core, etc.)
-# fails to load with an "incompatible architecture" dlopen error the
-# moment the app runs under x86_64 translation instead. No-op on Intel
-# Macs (sysctl.proc_translated doesn't exist there, so this stays 0/empty).
-if [ "$(sysctl -in sysctl.proc_translated 2>/dev/null)" = "1" ]; then
-    exec arch -arm64 /bin/bash "$0" "$@"
-fi
-
 JARVIS_DIR="${JARVIS_PROJECT_DIR:-$HOME/JARVIS}"
 LOG_DIR="$HOME/.jarvis/logs"
 mkdir -p "$LOG_DIR"
@@ -30,4 +20,17 @@ fi
 cd "$JARVIS_DIR"
 # shellcheck disable=SC1091
 source .venv/bin/activate
-exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
+
+# python.org's official installer ships a universal2 (x86_64 + arm64) fat
+# binary. Launched from an interactive Terminal it runs arm64 natively as
+# expected, but launched via this GUI app bundle it was picking the x86_64
+# slice instead (confirmed: dlopen failures on arm64-only compiled wheels
+# like pydantic_core, even though `uname -m`/`arch` both report arm64 and
+# nothing is running under Rosetta translation) — some quirk of how
+# LaunchServices execs a fat binary vs. an interactive shell does. Rather
+# than rely on detecting that, just force the correct slice directly.
+if [ "$(uname -m)" = "arm64" ]; then
+    exec arch -arm64 jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
+else
+    exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
+fi
