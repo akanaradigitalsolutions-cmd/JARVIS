@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
 from PySide6.QtWebEngineWidgets import QWebEngineView
@@ -279,7 +280,7 @@ class HudWindow(QMainWindow):
             self.voice_thread.terminate()
             self.voice_thread.wait()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt override naming convention
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt override naming convention
         self.shutdown_voice_thread()
         super().closeEvent(event)
 
