@@ -23,23 +23,15 @@ source .venv/bin/activate
 
 # python.org's official installer ships a universal2 (x86_64 + arm64) fat
 # binary. Launched from an interactive Terminal it runs arm64 natively as
-# expected, but launched via this GUI app bundle it was picking the x86_64
-# slice instead (confirmed: dlopen failures on arm64-only compiled wheels
-# like pydantic_core, even though `uname -m`/`arch` both report arm64 and
-# nothing is running under Rosetta translation) — some quirk of how
-# LaunchServices execs a fat binary vs. an interactive shell does. Rather
-# than rely on detecting that, just force the correct slice directly.
-#
-# `arch -arm64 jarvis` isn't enough: `jarvis` is a shebang script, and the
-# kernel's shebang handling re-execs the interpreter path itself — that
-# internal re-exec doesn't inherit arch's binary-architecture preference,
-# so the interpreter still ends up x86_64 when launched via a real Finder
-# double-click (as opposed to `open -a` from an already-arm64 Terminal).
-# Point arch at the python3.13 binary directly instead, passing the
-# jarvis script as a plain argument, so there's no re-exec hop for the
-# preference to get lost on.
-if [ "$(uname -m)" = "arm64" ]; then
-    exec arch -arm64 "$JARVIS_DIR/.venv/bin/python3.13" "$JARVIS_DIR/.venv/bin/jarvis" --ui >> "$LOG_DIR/launcher.log" 2>&1
-else
-    exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
-fi
+# expected, but a genuine Finder double-click of this bundle was launching
+# the whole process tree under Rosetta translation instead (confirmed:
+# dlopen failures on arm64-only compiled wheels like pydantic_core, even
+# though `uname -m` reports arm64 — that reports the host's native
+# architecture, not whether the calling process itself is translated).
+# Once the top-level process is translated, arch -arm64 from inside it
+# can't escape back to native — the architecture has to be chosen at the
+# point Launch Services starts the bundle's executable, which is what
+# Info.plist's LSRequiresNativeExecution key does. With that key set,
+# this script (and everything it execs) is guaranteed to already be
+# native arm64, so no workaround is needed here.
+exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1
