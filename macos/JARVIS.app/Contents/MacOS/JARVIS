@@ -1,0 +1,23 @@
+#!/bin/bash
+# The actual executable inside JARVIS.app's bundle — this is what macOS
+# runs when you double-click the app, or when something (a keyboard
+# shortcut, `open -a JARVIS`) launches it. Never opens a Terminal window.
+#
+# If your JARVIS project lives somewhere other than ~/JARVIS, either set
+# JARVIS_PROJECT_DIR in your shell environment before launching, or just
+# edit the default below.
+set -e
+
+JARVIS_DIR="${JARVIS_PROJECT_DIR:-$HOME/JARVIS}"
+LOG_DIR="$HOME/.jarvis/logs"
+mkdir -p "$LOG_DIR"
+
+if [ ! -d "$JARVIS_DIR" ] || [ ! -f "$JARVIS_DIR/.venv/bin/activate" ]; then
+    osascript -e "display alert \"JARVIS not found\" message \"Couldn't find a JARVIS install with its virtual environment at $JARVIS_DIR. Edit Contents/MacOS/JARVIS inside JARVIS.app (right-click JARVIS.app > Show Package Contents) and fix JARVIS_DIR, or set the JARVIS_PROJECT_DIR environment variable.\" as critical"
+    exit 1
+fi
+
+cd "$JARVIS_DIR"
+# shellcheck disable=SC1091
+source .venv/bin/activate
+exec jarvis --ui >> "$LOG_DIR/launcher.log" 2>&1

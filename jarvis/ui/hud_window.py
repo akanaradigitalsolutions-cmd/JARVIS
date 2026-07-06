@@ -24,11 +24,32 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QThread, QUrl, Signal
+from PySide6.QtNetwork import QLocalServer, QLocalSocket
 from PySide6.QtWebEngineCore import QWebEngineDownloadRequest
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from jarvis.webui.server import app as fastapi_app
+
+# A fixed local-socket name a second `jarvis --ui` launch can connect to, so
+# a global keyboard shortcut that just runs the app again (the natural way
+# to wire one up on macOS) toggles the existing window to the front instead
+# of piling up duplicate windows/servers every time it's pressed.
+_SINGLE_INSTANCE_NAME = "jarvis-hud-single-instance"
+
+
+def _activate_running_instance() -> bool:
+    """If a JARVIS HUD is already running, tell it to come to the front and
+    return True (the caller should then exit immediately instead of
+    starting a second copy)."""
+    sock = QLocalSocket()
+    sock.connectToServer(_SINGLE_INSTANCE_NAME)
+    connected = sock.waitForConnected(200)
+    if connected:
+        sock.write(b"show")
+        sock.waitForBytesWritten(200)
+        sock.disconnectFromServer()
+    return connected
 
 
 def _reveal_in_file_manager(path: Path) -> None:
@@ -198,6 +219,34 @@ class HudWindow(QMainWindow):
         self.voice_thread.setup_failed.connect(self._on_voice_setup_failed)
         self.voice_thread.start()
 
+        # Listen for a second `jarvis --ui` launch (e.g. from a keyboard
+        # shortcut) telling us to come to the front, instead of it starting
+        # a whole second instance — see _activate_running_instance().
+        QLocalServer.removeServer(_SINGLE_INSTANCE_NAME)
+        self._ipc_server = QLocalServer(self)
+        self._ipc_server.listen(_SINGLE_INSTANCE_NAME)
+        self._ipc_server.newConnection.connect(self._on_ipc_connection)
+
+    def _on_ipc_connection(self) -> None:
+        conn = self._ipc_server.nextPendingConnection()
+        if conn is None:
+            return
+        conn.readyRead.connect(lambda: self._handle_ipc_message(conn))
+
+    def _handle_ipc_message(self, conn) -> None:
+        if bytes(conn.readAll()).strip() == b"show":
+            self.bring_to_front()
+        conn.disconnectFromServer()
+
+    def bring_to_front(self) -> None:
+        # Best-effort: macOS may still keep another app focused (e.g. a
+        # fullscreen app in a different Space, or Focus/Do Not Disturb
+        # mode) — that's an OS-level restriction, not something an app can
+        # force past.
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
     def _on_download_requested(self, download: QWebEngineDownloadRequest) -> None:
         """QWebEngineView has no built-in download UI at all — clicking a
         generated file's card in the HUD would otherwise silently do
@@ -238,13 +287,7 @@ class HudWindow(QMainWindow):
         self.view.page().runJavaScript(script)
 
     def _on_wake_detected(self) -> None:
-        # Best-effort: bring the window to the front. macOS may still keep
-        # another app focused (e.g. a fullscreen app in a different Space,
-        # or Focus/Do Not Disturb mode) — that's an OS-level restriction,
-        # not something an app can force past.
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        self.bring_to_front()
         self._run_js("window.jarvisVoiceBridge && window.jarvisVoiceBridge.onWake()")
 
     def _on_thinking(self) -> None:
@@ -271,6 +314,15 @@ class HudWindow(QMainWindow):
 
 
 def run() -> None:
+    # QLocalSocket needs a QCoreApplication instance to work at all, so this
+    # has to exist before the single-instance check — cheap, doesn't start
+    # the event loop yet.
+    app = QApplication(sys.argv)
+
+    if _activate_running_instance():
+        print("JARVIS is already running — bringing it to the front.")
+        return
+
     port = _free_port()
     server_thread = threading.Thread(target=_start_server, args=(port,), daemon=True)
     server_thread.start()
@@ -279,7 +331,6 @@ def run() -> None:
         print("JARVIS's local server didn't start in time.", file=sys.stderr)
         raise SystemExit(1)
 
-    app = QApplication(sys.argv)
     window = HudWindow(port)
     app.aboutToQuit.connect(window.shutdown_voice_thread)
     window.show()

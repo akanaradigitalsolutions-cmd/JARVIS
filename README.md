@@ -89,6 +89,12 @@ free pretrained model) unless you train a custom one — see
 jarvis --voice
 ```
 
+**Launching without Terminal, and a global keyboard shortcut** (macOS):
+see [macos/README.md](macos/README.md) — a double-clickable `JARVIS.app`
+plus how to wire a system-wide hotkey to it that toggles the HUD to the
+front (relaunching while it's already running activates it instead of
+opening a second copy).
+
 ## What it can already do (Phase 1)
 
 Ask it in plain English, e.g.:
