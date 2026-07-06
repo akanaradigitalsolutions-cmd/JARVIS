@@ -28,6 +28,8 @@ def _resolve_home() -> Path:
 class Settings:
     claude_bin: str
     model: str
+    claude_timeout_seconds: int
+    debug: bool
     workspace: Path
     jarvis_home: Path
     wake_word: str
@@ -41,6 +43,10 @@ def load_settings() -> Settings:
     return Settings(
         claude_bin=os.getenv("JARVIS_CLAUDE_BIN", "claude"),
         model=os.getenv("JARVIS_MODEL", "claude-sonnet-5"),
+        # Generous default: a multi-step agentic task (fetch a page, analyze
+        # data, write a PDF) can legitimately take a couple of minutes.
+        claude_timeout_seconds=int(os.getenv("JARVIS_CLAUDE_TIMEOUT_SECONDS", "240")),
+        debug=os.getenv("JARVIS_DEBUG", "").strip().lower() in ("1", "true", "yes"),
         workspace=_resolve_workspace(),
         jarvis_home=_resolve_home(),
         # The wake-word *model* is fixed to openWakeWord's pretrained

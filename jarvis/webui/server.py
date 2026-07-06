@@ -17,9 +17,12 @@ from fastapi.staticfiles import StaticFiles
 
 from jarvis.core.config import settings
 from jarvis.core.llm import ClaudeCLINotAvailableError
+from jarvis.core.logging_config import get_logger
 from jarvis.core.memory import SessionMemory
 from jarvis.core.orchestrator import Orchestrator
 from jarvis.skills.filesystem import PathOutsideWorkspaceError, resolve_in_workspace
+
+logger = get_logger("webui")
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -76,6 +79,7 @@ def chat(payload: dict) -> dict:
         try:
             reply = orchestrator.handle_message(message)
         except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
+            logger.warning("/api/chat returning 500: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         duration_s = time.monotonic() - start
         after = _snapshot_workspace()

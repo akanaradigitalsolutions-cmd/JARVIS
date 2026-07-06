@@ -1,9 +1,19 @@
+import json
+import subprocess
 import sys
 
 import pytest
 
+import jarvis.core.llm as llm_module
 from jarvis.core.llm import BUILTIN_TOOLS_TO_DENY, ClaudeCLIClient, ClaudeCLINotAvailableError
 from jarvis.skills import base as skills
+
+
+class _FakeCompletedProcess:
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "") -> None:
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
 
 
 def test_raises_when_binary_missing():
@@ -48,3 +58,59 @@ def test_warns_but_does_not_crash_when_api_key_set(monkeypatch, capsys):
     ClaudeCLIClient(claude_bin=sys.executable)
     captured = capsys.readouterr()
     assert "ANTHROPIC_API_KEY" in captured.err
+
+
+def test_send_retries_once_then_succeeds(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_run(args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FakeCompletedProcess(returncode=1, stderr="temporary glitch")
+        return _FakeCompletedProcess(returncode=0, stdout=json.dumps({"result": "ok", "session_id": "s1"}))
+
+    monkeypatch.setattr(llm_module.subprocess, "run", fake_run)
+    client = ClaudeCLIClient(claude_bin=sys.executable)
+    result = client.send("hi", "sys", session_id=None)
+
+    assert result == {"result": "ok", "session_id": "s1"}
+    assert calls["n"] == 2
+
+
+def test_send_raises_clear_error_after_two_failed_attempts(monkeypatch):
+    def fake_run(args, **kwargs):
+        return _FakeCompletedProcess(returncode=1, stderr="permanent failure")
+
+    monkeypatch.setattr(llm_module.subprocess, "run", fake_run)
+    client = ClaudeCLIClient(claude_bin=sys.executable)
+
+    with pytest.raises(RuntimeError, match="permanent failure"):
+        client.send("hi", "sys", session_id=None)
+
+
+def test_send_raises_clear_error_after_repeated_timeout(monkeypatch):
+    def fake_run(args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=args, timeout=kwargs.get("timeout", 1))
+
+    monkeypatch.setattr(llm_module.subprocess, "run", fake_run)
+    client = ClaudeCLIClient(claude_bin=sys.executable)
+
+    with pytest.raises(RuntimeError, match="didn't respond"):
+        client.send("hi", "sys", session_id=None)
+
+
+def test_send_recovers_from_unparseable_output_on_retry(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_run(args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FakeCompletedProcess(returncode=0, stdout="not json")
+        return _FakeCompletedProcess(returncode=0, stdout=json.dumps({"result": "recovered"}))
+
+    monkeypatch.setattr(llm_module.subprocess, "run", fake_run)
+    client = ClaudeCLIClient(claude_bin=sys.executable)
+    result = client.send("hi", "sys", session_id=None)
+
+    assert result == {"result": "recovered"}
+    assert calls["n"] == 2

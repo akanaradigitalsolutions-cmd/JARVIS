@@ -20,10 +20,14 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import Any
 
 from jarvis.core.config import settings
+from jarvis.core.logging_config import get_logger
 from jarvis.skills import base as skills
+
+logger = get_logger("llm")
 
 MCP_SERVER_MODULE = "jarvis.mcp_server"
 
@@ -98,10 +102,50 @@ class ClaudeCLIClient:
 
     def send(self, prompt: str, system_prompt: str, session_id: str | None) -> dict[str, Any]:
         args = self.build_args(prompt, system_prompt, session_id)
-        proc = subprocess.run(args, capture_output=True, text=True, cwd=str(settings.jarvis_home))
-        if proc.returncode != 0:
-            raise RuntimeError(f"claude CLI exited with code {proc.returncode}: {proc.stderr.strip()}")
-        try:
-            return json.loads(proc.stdout)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Couldn't parse claude CLI output: {proc.stdout[:500]!r}") from exc
+        last_error: Exception | None = None
+
+        # One retry on any transient-looking failure (timeout, nonzero exit,
+        # unparseable output) before giving up — a single flaky invocation
+        # of the CLI shouldn't surface as a hard failure to the user. Both
+        # attempts use --resume the same session_id, so a retry after a
+        # partial tool-use failure just continues the same conversation
+        # rather than losing context or duplicating work.
+        for attempt in (1, 2):
+            start = time.monotonic()
+            try:
+                proc = subprocess.run(
+                    args, capture_output=True, text=True, cwd=str(settings.jarvis_home),
+                    timeout=settings.claude_timeout_seconds,
+                )
+            except subprocess.TimeoutExpired as exc:
+                last_error = exc
+                logger.warning("claude CLI timed out after %.1fs (attempt %d/2)", settings.claude_timeout_seconds, attempt)
+                continue
+
+            duration = time.monotonic() - start
+            if proc.returncode != 0:
+                last_error = RuntimeError(f"claude CLI exited with code {proc.returncode}: {proc.stderr.strip()}")
+                logger.warning(
+                    "claude CLI exited with code %d after %.1fs (attempt %d/2): %s",
+                    proc.returncode, duration, attempt, proc.stderr.strip()[:300],
+                )
+                continue
+
+            try:
+                result = json.loads(proc.stdout)
+            except json.JSONDecodeError as exc:
+                last_error = RuntimeError(f"Couldn't parse claude CLI output: {proc.stdout[:500]!r}")
+                logger.warning("claude CLI returned unparseable output (attempt %d/2): %s", attempt, exc)
+                continue
+
+            logger.info("claude CLI call succeeded in %.1fs (attempt %d/2)", duration, attempt)
+            return result
+
+        logger.error("claude CLI failed after 2 attempts: %s", last_error)
+        if isinstance(last_error, subprocess.TimeoutExpired):
+            raise RuntimeError(
+                f"Claude didn't respond within {settings.claude_timeout_seconds}s, even after a retry. "
+                "This can happen on a very long or complex task — try breaking the request into smaller "
+                "steps, or raise JARVIS_CLAUDE_TIMEOUT_SECONDS in .env."
+            ) from last_error
+        raise last_error
