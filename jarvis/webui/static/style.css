@@ -134,82 +134,72 @@ body.drag-over #drop-overlay {
   100% { transform: scale(1); filter: brightness(1); opacity: 1; }
 }
 
-.hud-ring {
+/* Mechanical dial: a toothed outer ring, a thick banded gauge with scale
+   divisions, and a rotating amber highlight arc — closer to the movie
+   HUD's engineered-instrument look than plain glowing circles. */
+.hud-dial {
   position: absolute;
-  border-radius: 50%;
-  border: 1.5px solid transparent;
-  box-shadow: 0 0 12px var(--cyan-glow) inset, 0 0 12px var(--cyan-glow);
-}
-
-.ring1 {
   inset: 0;
-  border-top-color: var(--cyan);
-  border-right-color: var(--cyan-dim);
-  animation: spin 9s linear infinite;
-  opacity: 0.85;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-.ring2 {
-  inset: 18px;
-  border-bottom-color: var(--cyan);
-  border-left-color: var(--cyan-dim);
-  animation: spin 6s linear infinite reverse;
-  opacity: 0.7;
+.dial-track {
+  fill: none;
+  stroke: #bfe6ff;
+  stroke-width: 1;
+  opacity: 0.3;
 }
 
-.ring3 {
-  inset: 36px;
-  border: 1px dashed var(--cyan-dim);
-  animation: spin 14s linear infinite;
-  opacity: 0.6;
+.dial-teeth {
+  fill: none;
+  stroke: #cfefff;
+  stroke-width: 6;
+  stroke-dasharray: 2.6 4.4;
+  opacity: 0.55;
+  filter: drop-shadow(0 0 2px rgba(191, 230, 255, 0.4));
 }
 
-.hud-ticks {
-  position: absolute;
-  inset: -14px;
-  border-radius: 50%;
-  background:
-    repeating-conic-gradient(var(--cyan-dim) 0deg 1.2deg, transparent 1.2deg 9deg);
-  opacity: 0.35;
-  -webkit-mask: radial-gradient(circle, transparent 63%, black 64%, black 70%, transparent 71%);
-  mask: radial-gradient(circle, transparent 63%, black 64%, black 70%, transparent 71%);
-  animation: spin 40s linear infinite;
+.dial-band {
+  fill: none;
+  stroke: #bfe6ff;
+  stroke-width: 13;
+  opacity: 0.16;
 }
 
-/* Segmented accent arc: a bright partial band that sweeps around, evoking
-   the movie HUD's highlighted dial segment. */
-.hud-accent-arc {
-  position: absolute;
-  inset: -6px;
-  border-radius: 50%;
-  background: conic-gradient(
-    from 0deg,
-    transparent 0deg,
-    transparent 305deg,
-    var(--accent) 320deg,
-    var(--accent) 340deg,
-    transparent 355deg,
-    transparent 360deg
-  );
+.dial-band-ticks {
+  fill: none;
+  stroke: #08151d;
+  stroke-width: 13;
+  stroke-dasharray: 1.6 3.6;
   opacity: 0.9;
-  -webkit-mask: radial-gradient(circle, transparent 78%, black 79%, black 82%, transparent 83%);
-  mask: radial-gradient(circle, transparent 78%, black 79%, black 82%, transparent 83%);
-  filter: drop-shadow(0 0 4px var(--accent-glow));
-  animation: spin 5s linear infinite;
 }
 
-/* Cardinal tick blocks (N/E/S/W), like a targeting reticle */
-.hud-cardinals span {
-  position: absolute;
-  background: var(--cyan);
+.dial-highlight {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 13;
+  stroke-linecap: round;
+  stroke-dasharray: 37.3 377.4;
+  opacity: 0.95;
+  filter: drop-shadow(0 0 5px var(--accent-glow));
+  animation: spin 6s linear infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.dial-cardinals rect {
+  fill: var(--cyan);
   opacity: 0.8;
-  box-shadow: 0 0 6px var(--cyan-glow);
+  filter: drop-shadow(0 0 4px var(--cyan-glow));
 }
 
-.hud-cardinals span:nth-child(1) { top: -12px; left: 50%; width: 2px; height: 10px; transform: translateX(-50%); }
-.hud-cardinals span:nth-child(2) { bottom: -12px; left: 50%; width: 2px; height: 10px; transform: translateX(-50%); }
-.hud-cardinals span:nth-child(3) { left: -12px; top: 50%; height: 2px; width: 10px; transform: translateY(-50%); }
-.hud-cardinals span:nth-child(4) { right: -12px; top: 50%; height: 2px; width: 10px; transform: translateY(-50%); }
+.dial-dots circle {
+  fill: var(--accent);
+  opacity: 0.85;
+  filter: drop-shadow(0 0 4px var(--accent-glow));
+}
 
 .hud-core {
   position: relative;
@@ -293,27 +283,25 @@ body.drag-over #drop-overlay {
   50% { opacity: 0.85; transform: scale(1.04); }
 }
 
-#hud.thinking .ring1 { animation-duration: 2.2s; }
-#hud.thinking .ring2 { animation-duration: 1.4s; }
 #hud.thinking .hud-core-glow { animation-duration: 0.9s; }
 #hud.thinking .hud-status { color: var(--cyan); }
-#hud.thinking .hud-accent-arc { animation-duration: 1.1s; }
+#hud.thinking .dial-highlight { animation-duration: 1.1s; }
 
 #hud.listening .hud-core-glow { animation: pulse 0.6s ease-in-out infinite; }
 #hud.listening .hud-core { border-color: var(--cyan); }
 #hud.listening .hud-status { color: var(--cyan); }
-#hud.listening .hud-accent-arc { animation-duration: 2s; }
+#hud.listening .dial-highlight { animation-duration: 2s; }
 
 #hud.speaking .hud-title,
 #hud.speaking .hud-status { display: none; }
 #hud.speaking .hud-equalizer { display: flex; }
 #hud.speaking .hud-core { border-color: var(--cyan); }
 #hud.speaking .hud-core-glow { animation: pulse 0.5s ease-in-out infinite; }
-#hud.speaking .hud-accent-arc { animation-duration: 0.8s; }
+#hud.speaking .dial-highlight { animation-duration: 0.8s; }
 
 #hud.error .hud-core { border-color: var(--danger); }
 #hud.error .hud-title { color: var(--danger); text-shadow: 0 0 8px rgba(255, 107, 107, 0.6); }
-#hud.error .hud-accent-arc { background: conic-gradient(from 0deg, transparent 0deg, transparent 305deg, var(--danger) 320deg, var(--danger) 340deg, transparent 355deg, transparent 360deg); }
+#hud.error .dial-highlight { stroke: var(--danger); filter: drop-shadow(0 0 5px rgba(255, 107, 107, 0.6)); }
 
 /* ---------- Chat panel ---------- */
 

@@ -11,12 +11,33 @@
   <div id="drop-overlay">Drop to attach</div>
 
   <div id="hud" class="idle booting">
-    <div class="hud-ring ring1"></div>
-    <div class="hud-ring ring2"></div>
-    <div class="hud-ring ring3"></div>
-    <div class="hud-ticks"></div>
-    <div class="hud-accent-arc"></div>
-    <div class="hud-cardinals"><span></span><span></span><span></span><span></span></div>
+    <svg class="hud-dial" viewBox="0 0 200 200">
+      <circle class="dial-track" cx="100" cy="100" r="94" />
+      <circle class="dial-teeth" cx="100" cy="100" r="84" />
+      <circle class="dial-band" cx="100" cy="100" r="66" />
+      <circle class="dial-band-ticks" cx="100" cy="100" r="66" />
+      <!-- Static -90deg rotation on the group (so the arc starts at 12
+           o'clock) lives on a wrapping <g>, not the animated circle itself:
+           a CSS transform animation on an element completely replaces any
+           SVG transform attribute on that same element, so the two can't
+           share one node. -->
+      <g transform="rotate(-90 100 100)">
+        <circle class="dial-highlight" cx="100" cy="100" r="66" />
+      </g>
+      <g class="dial-cardinals">
+        <rect x="98.5" y="2" width="3" height="10" rx="1" />
+        <rect x="98.5" y="188" width="3" height="10" rx="1" />
+        <rect x="2" y="98.5" width="10" height="3" rx="1" />
+        <rect x="188" y="98.5" width="10" height="3" rx="1" />
+      </g>
+      <g class="dial-dots">
+        <circle cx="85.8" cy="19.3" r="2.4" />
+        <circle cx="97.1" cy="18.1" r="2.4" />
+        <circle cx="108.6" cy="18.5" r="2.4" />
+        <circle cx="119.8" cy="20.4" r="2.4" />
+        <circle cx="130.7" cy="24.0" r="2.4" />
+      </g>
+    </svg>
     <div class="hud-core">
       <div class="hud-core-glow"></div>
       <div class="hud-title">JARVIS</div>
